@@ -100,7 +100,7 @@ final class Recorder
                 . (isset($frame['file']) ? ' at ' . $frame['file'] . ':' . ($frame['line'] ?? 0) : ''), 0, 400);
         }
         // Cut to what a text column holds with room to spare: one huge message must not cost the others their place.
-        $message = $this->secrets->scrubbed(mb_strcut($error->getMessage(), 0, 4000), $data);
+        $message = mb_strcut($this->secrets->scrubbed($error->getMessage(), $data), 0, 4000);
         $this->events[] = [
             'kind' => 'exception',
             'at' => time(),
@@ -127,7 +127,7 @@ final class Recorder
             'detail' => [
                 'id' => (string) $event->message->id, 'queue' => $event->message->queue, 'attempts' => $event->message->attempts,
                 'ms' => round($milliseconds, 2), 'outcome' => $event->error === null ? 'completed' : ($event->gaveUp ? 'failed' : 'retrying'),
-                'error' => $event->error === null ? null : $this->secrets->scrubbed(mb_strcut($event->error::class . ': ' . $event->error->getMessage(), 0, 500), $event->message->data),
+                'error' => $event->error === null ? null : mb_strcut($this->secrets->scrubbed($event->error::class . ': ' . $event->error->getMessage(), $event->message->data), 0, 500),
             ],
         ];
         if (count($this->recent) > 25) {

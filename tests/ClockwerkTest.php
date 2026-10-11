@@ -452,6 +452,63 @@ final class ClockwerkTest extends TestCase
         self::assertSame(['new'], array_column($store->recent('exception', 0, 10), 'title'));
     }
 
+    public function testRetryRejectsAnotherSitesRequestBeforeChangingTheQueue(): void
+    {
+        $app = $this->app(['middleware' => [OnlyAdmins::class]]);
+        $queue = $app->container->get(Queue::class);
+        $queue->push(Greet::class, name: 'nobody');
+        self::assertSame(0, $app->console->run(['queue:work', '--stop-when-empty'], $this->quiet()));
+        $store = $app->container->get(\Crab\Contracts\Queue\Store::class);
+        $headers = ['Cookie' => 'admin=1', 'Host' => 'app.example.com', 'Content-Type' => 'application/json'];
+
+        foreach ([['Origin' => 'https://other.example'], ['Sec-Fetch-Site' => 'cross-site'], ['Sec-Fetch-Site' => 'same-site']] as $elsewhere) {
+            self::assertSame(403, $app->handle(new Request('POST', '/clockwerk/api/jobs/retry', $headers + $elsewhere, '{"id":"all"}'))->getStatusCode());
+            self::assertCount(1, $store->failed());
+        }
+        $response = $app->handle(new Request('POST', '/clockwerk/api/jobs/retry', $headers + ['Origin' => 'https://app.example.com', 'Sec-Fetch-Site' => 'same-origin'], '{"id":"all"}'));
+        self::assertSame(['retried' => 1], json_decode((string) $response->getBody(), true));
+        self::assertSame([], $store->failed());
+    }
+
+    public function testStatusMarksTheFailedCountAsALowerBoundWhenMoreJobsExist(): void
+    {
+        $app = $this->app(['token' => 's3cret']);
+        $queue = $app->container->get(\Crab\Contracts\Queue\Store::class);
+        for ($i = 0; $i < 201; ++$i) {
+            $queue->push('default', Greet::class, ['name' => 'nobody'], time(), time());
+            $message = $queue->reserve(['default'], time(), 60);
+            self::assertNotNull($message);
+            $queue->fail($message, 'refused', time());
+        }
+        [$output, $read] = $this->captured();
+
+        self::assertSame(0, $app->console->run(['clockwerk:status'], $output));
+        self::assertStringContainsString('200+ failed for good', $read());
+        $jobs = $app->container->get(Dashboard::class)->state()['jobs'];
+        self::assertSame(200, $jobs['failed_total']);
+        self::assertTrue($jobs['failed_more']);
+    }
+
+    public function testLongMultibyteNamesAreStoredWithAnExactCompactHash(): void
+    {
+        $app = $this->app([]);
+        $store = $app->container->get(Store::class);
+        $database = new \PDO('sqlite:' . $this->directory . '/app.sqlite');
+        $unique = array_values(array_filter($database->query("PRAGMA index_list('clockwerk_metrics')")->fetchAll(\PDO::FETCH_ASSOC), static fn (array $index): bool => $index['unique'] === 1));
+        self::assertCount(1, $unique);
+        $columns = $database->query('PRAGMA index_info(' . $database->quote($unique[0]['name']) . ')')->fetchAll(\PDO::FETCH_ASSOC);
+        self::assertSame(['worker', 'kind', 'name_hash', 'bucket'], array_column($columns, 'name'));
+        $names = [str_repeat('路', 159) . 'A', str_repeat('路', 159) . 'a'];
+        foreach ($names as $i => $name) {
+            $store->metrics('worker', [['kind' => 'request', 'name' => $name, 'bucket' => 60, 'runs' => $i + 1, 'total_ms' => 1.0, 'max_ms' => 1.0, 'errors' => 0]]);
+        }
+        $rows = $database->query('SELECT name, name_hash, runs FROM clockwerk_metrics ORDER BY runs')->fetchAll(\PDO::FETCH_ASSOC);
+
+        self::assertSame($names, array_column($rows, 'name'));
+        self::assertSame(array_map(sha1(...), $names), array_column($rows, 'name_hash'));
+        self::assertSame([1, 2], array_column($rows, 'runs'));
+    }
+
     /**
      * @param array<string, mixed> $clockwerk
      */

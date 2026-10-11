@@ -158,7 +158,7 @@ final readonly class Dashboard
         foreach (array_reverse($failed) as $message) {
             $shown[] = [
                 'id' => (string) $message->id, 'job' => $message->job, 'queue' => $message->queue, 'attempts' => $message->attempts,
-                'error' => $message->error === null ? null : $this->secrets->scrubbed(mb_strcut($message->error, 0, 2000), $message->data), 'failed_at' => $message->failedAt,
+                'error' => $message->error === null ? null : mb_strcut($this->secrets->scrubbed($message->error, $message->data), 0, 2000), 'failed_at' => $message->failedAt,
                 'data' => $this->secrets->hidden($message->data),
             ];
         }

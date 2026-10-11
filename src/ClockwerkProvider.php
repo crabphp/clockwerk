@@ -160,6 +160,10 @@ final class ClockwerkProvider implements WorkerProvider
         };
         // As a task of the worker: the database may make its caller wait for a connection.
         $this->timer = $worker->loop->repeat(max(1.0, (float) $container->get(Config::class)->get('clockwerk.interval')), static function () use ($worker, $write): void {
+            // A worker that is stopping takes no new task; stop() writes what is left.
+            if ($worker->isDraining()) {
+                return;
+            }
             $worker->spawn($write);
         });
         $worker->spawn($write);
