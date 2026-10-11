@@ -5,6 +5,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.4",
+        "ext-mbstring": "*",
         "crabphp/framework": "@dev"
     },
     "require-dev": {
