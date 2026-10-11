@@ -180,6 +180,16 @@ pre b { color: var(--text); font-weight: 600; }
 .verdict.bad { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); background: color-mix(in srgb, var(--bad-soft) 55%, var(--surface)); }
 .verdict code { font-family: var(--mono); font-size: 12.5px; background: var(--line-soft); padding: 1px 6px; border-radius: 5px; }
 .card > header .right { flex-wrap: wrap; justify-content: flex-end; }
+.subnav { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.subnav a { display: flex; align-items: center; gap: 8px; padding: 8px 12px 9px; margin-bottom: -1px; border-bottom: 2px solid transparent; color: var(--muted); font-weight: 550; white-space: nowrap; }
+.subnav a:hover { color: var(--text); }
+.subnav a.on { color: var(--text); border-bottom-color: var(--accent); }
+.subnav .count { min-width: 20px; padding: 0 6px; border-radius: 10px; background: var(--line-soft); color: var(--muted); font-size: 11.5px; font-weight: 600; text-align: center; line-height: 18px; }
+.subnav .count.bad { background: var(--bad-soft); color: var(--bad); }
+.cards > a { display: block; min-width: 0; }
+.cards > a:hover .card { border-color: var(--faint); }
+.warn-text { color: var(--warn); font-weight: 600; }
+.verdict a { text-decoration: underline; }
 .banner { margin-bottom: 16px; padding: 10px 14px; border-radius: 10px; background: var(--warn-soft); color: var(--warn); font-weight: 500; }
 
 @media (max-width: 1100px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } .three { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -211,13 +221,16 @@ const pages = [
     ['exceptions', 'Exceptions', '<path d="M12 3l10 17H2z"/><path d="M12 10v4M12 17.5v.5"/>'],
 ];
 const ranges = [[15, '15m'], [60, '1h'], [360, '6h'], [1440, '24h']];
+// The parts of the queue page, and the ones that list the jobs standing in a state.
+const queueTabs = ['overview', 'pending', 'processing', 'delayed', 'recent', 'failed'];
+const listed = ['pending', 'processing', 'delayed'];
 
 const store = {
     get(key, fallback) { try { return JSON.parse(localStorage.getItem('clockwerk.' + key)) ?? fallback; } catch { return fallback; } },
     set(key, value) { try { localStorage.setItem('clockwerk.' + key, JSON.stringify(value)); } catch {} },
 };
 const ui = {
-    page: pages.some(([id]) => id === location.hash.slice(1)) ? location.hash.slice(1) : 'overview',
+    page: 'overview',
     minutes: store.get('minutes', 60),
     paused: false,
     state: null,
@@ -228,8 +241,8 @@ const ui = {
     sort: { requests: ['runs', -1], jobs: ['runs', -1] },
     filter: '',
     open: new Set(),
-    shown: { failed: 15, exceptions: 25, recent: 25 },
-    jobTab: 'recent',
+    shown: { failed: 25, exceptions: 25, recent: 25, listed: 25 },
+    queueTab: 'overview',
     jobFilter: 'all',
     busy: false,
     toast: null,
@@ -281,13 +294,21 @@ async function call(path, options = {}) {
     return response.json();
 }
 
+let asked = 0;
 async function refresh() {
+    // Answers may arrive out of order; only the answer to the latest question is kept.
+    const mine = ++asked;
     try {
-        ui.state = await call('/api?minutes=' + ui.minutes);
+        // The jobs of a state one by one are asked for only while that list is open.
+        const list = ui.page === 'queue' && listed.includes(ui.queueTab) ? '&list=' + ui.queueTab : '';
+        const state = await call('/api?minutes=' + ui.minutes + list);
+        if (mine !== asked) { return; }
+        ui.state = state;
         ui.error = null;
         ui.gate = false;
         ui.fetchedAt = Date.now();
     } catch (error) {
+        if (mine !== asked) { return; }
         ui.gate = Boolean(error.gate);
         ui.closed = Boolean(error.closed);
         ui.error = error.message || 'The dashboard could not be reached.';
@@ -347,6 +368,7 @@ function spark(data, key) {
 
 const empty = (title, text) => `<div class="empty"><b>${title}</b>${text}</div>`;
 const card = (title, hint, body, right = '') => `<section class="card"><header><h2>${title}</h2>${hint ? `<span class="hint">${hint}</span>` : ''}${right ? `<span class="right">${right}</span>` : ''}</header>${body}</section>`;
+const bare = (body, right = '') => `<section class="card">${right ? `<header><span class="right">${right}</span></header>` : ''}${body}</section>`;
 const stat = (label, value, foot, extra = '') => `<section class="card stat"><div class="label">${label}</div><div class="value num">${value}</div><div class="foot">${foot}</div>${extra}</section>`;
 const legend = '<span class="legend"><span><i></i>Succeeded</span><span><i class="err"></i>Failed</span></span>';
 const routeName = (name) => { const at = name.indexOf(' '); return `<span class="method ${esc(name.slice(0, at))}">${esc(name.slice(0, at))}</span><span class="mono">${esc(name.slice(at + 1))}</span>`; };
@@ -404,99 +426,128 @@ function requests(s) {
     <div class="section">${card('Routes', `${s.requests.rows.length}`, measuredTable('requests', s.requests, routeName, 'Route') || empty('No requests yet', 'Every request is counted by its route, within a few seconds of being answered.'), `<input class="search" type="search" placeholder="Filter routes" value="${esc(ui.filter)}" data-filter>`)}</div>`;
 }
 
-// What someone deciding about the queue wants first: is it keeping up, and if not, where and why.
+// Is the queue keeping up, and if not, where: one short line for each thing that is wrong.
 function queueVerdict(s, alive) {
     const problems = [];
-    // Queues with no worker at all: saying that is enough, without also saying they fall behind.
     const unserved = new Set();
+    const of = (names, key) => names.reduce((sum, name) => sum + (s.jobs.queues.find((q) => q.name === name)?.[key] ?? 0), 0);
     for (const sup of s.jobs.supervisors) {
         const running = alive['queue:' + sup.name] || 0;
-        const waiting = sup.queues.reduce((sum, name) => sum + (s.jobs.queues.find((q) => q.name === name)?.pending ?? 0), 0);
-        const stranded = sup.queues.reduce((sum, name) => sum + (s.jobs.queues.find((q) => q.name === name)?.processing ?? 0), 0);
-        if (running === 0) { sup.queues.forEach((name) => unserved.add(name)); }
-        if (running === 0 && waiting > 0) { problems.push(['bad', `No worker is running for <b>${esc(sup.name)}</b>, and ${int(waiting)} ${waiting === 1 ? 'job waits' : 'jobs wait'} in it. Start <code>php cua serve</code>, or <code>queue:work</code> on its own.`]); }
-        else if (running === 0 && stranded > 0) { problems.push(['bad', `No worker is running for <b>${esc(sup.name)}</b>, and ${int(stranded)} ${stranded === 1 ? 'job was' : 'jobs were'} being run when the last one went. ${stranded === 1 ? 'It is' : 'They are'} given out again once a worker is back.`]); }
-        else if (running === 0) { problems.push(['warn', `No worker is running for <b>${esc(sup.name)}</b>.`]); }
-        else if (running < sup.workers) { problems.push(['warn', `<b>${esc(sup.name)}</b> has ${running} of its ${sup.workers} workers.`]); }
+        if (running === 0) {
+            sup.queues.forEach((name) => unserved.add(name));
+            const stuck = of(sup.queues, 'pending') + of(sup.queues, 'processing');
+            problems.push([stuck ? 'bad' : 'warn', `<b>${esc(sup.name)}</b> has no worker${stuck ? ` · ${int(stuck)} waiting` : ''}`]);
+        } else if (running < sup.workers) {
+            problems.push(['warn', `<b>${esc(sup.name)}</b> has ${running} of ${sup.workers} workers`]);
+        }
     }
-    if (!s.jobs.supervisors.length && !(alive.queue || 0) && s.jobs.queues.some((q) => q.pending > 0 || q.processing > 0)) { problems.push(['bad', 'Jobs are waiting, or were being run when their worker went, and no worker is running. Start <code>php cua serve</code>, or <code>queue:work</code> on its own.']); }
+    if (!s.jobs.supervisors.length && !(alive.queue || 0) && s.jobs.queues.some((q) => q.pending || q.processing)) { problems.push(['bad', 'No worker is running']); }
     for (const q of s.jobs.queues) {
-        if (q.longest_wait !== null && q.longest_wait >= 60 && !unserved.has(q.name)) { problems.push([q.longest_wait >= 300 ? 'bad' : 'warn', `<b>${esc(q.name)}</b> is falling behind: ${int(q.pending)} pending, and the oldest has waited ${span(q.longest_wait)}. It needs more workers, or its jobs take too long.`]); }
+        if (q.longest_wait >= 60 && !unserved.has(q.name)) { problems.push([q.longest_wait >= 300 ? 'bad' : 'warn', `<b>${esc(q.name)}</b> is behind · oldest waited ${span(q.longest_wait)}`]); }
         const tries = q.completed + q.retried + q.failed;
-        if (tries >= 10 && (q.retried + q.failed) / tries >= 0.25) { problems.push(['warn', `In <b>${esc(q.name)}</b> ${pctText(pct(q.retried + q.failed, tries))} of tries failed. See which job below.`]); }
+        if (tries >= 10 && (q.retried + q.failed) / tries >= 0.25) { problems.push(['warn', `<b>${esc(q.name)}</b> · ${pctText(pct(q.retried + q.failed, tries))} of tries fail`]); }
     }
-    if (s.jobs.failed_total > 0) { problems.push(['warn', `${int(s.jobs.failed_total)}${s.jobs.failed_more ? '+' : ''} ${s.jobs.failed_total === 1 ? 'job has' : 'jobs have'} failed for good and ${s.jobs.failed_total === 1 ? 'waits' : 'wait'} to be retried or forgotten.`]); }
-    if (!problems.length) { return `<div class="verdict ok"><span class="dot"></span><div><b>The queue is keeping up.</b> Nothing has waited a minute, and nothing has failed for good.</div></div>`; }
+    if (s.jobs.failed_total) { problems.push(['warn', `<a href="#queue/failed">${int(s.jobs.failed_total)}${s.jobs.failed_more ? '+' : ''} failed</a>`]); }
+    if (!problems.length) { return `<div class="verdict ok"><span class="dot"></span><div>Keeping up</div></div>`; }
     const worst = problems.some(([level]) => level === 'bad') ? 'bad' : 'warn';
     return `<div class="verdict ${worst}"><span class="dot ${worst === 'bad' ? 'down' : 'paused'}"></span><div>${problems.map(([, text]) => `<div>${text}</div>`).join('')}</div></div>`;
 }
 
 function queue(s) {
-    if (!s.jobs.installed) { return `<section class="card">${empty('No queue', 'Register <code>QueueProvider</code> before <code>ClockwerkProvider</code> to see jobs here.')}</section>`; }
+    if (!s.jobs.installed) { return `<section class="card">${empty('No queue', 'Register <code>QueueProvider</code>.')}</section>`; }
+    // "queue:mail" serves mail; one process doing the work of several is "queue:mail+default".
     const alive = {};
-    for (const worker of s.workers) { alive[worker.group_name] = (alive[worker.group_name] || 0) + 1; }
-    const single = alive['queue'] || 0;
+    for (const worker of s.workers) {
+        alive[worker.group_name] = (alive[worker.group_name] || 0) + 1;
+        const names = worker.group_name.startsWith('queue:') ? worker.group_name.slice(6).split('+') : [];
+        if (names.length > 1) { for (const name of names) { alive['queue:' + name] = (alive['queue:' + name] || 0) + 1; } }
+    }
+    // A supervisor named "queue" runs as the group of that name.
+    if (alive.queue) { alive['queue:queue'] = (alive['queue:queue'] || 0) + alive.queue; }
     const sum = (key) => s.jobs.queues.reduce((total, q) => total + (q[key] || 0), 0);
-    const waits = s.jobs.queues.map((q) => q.longest_wait).filter((w) => w !== null);
-    const longest = waits.length ? Math.max(...waits) : null;
-    const completed = sum('completed'), failedTries = sum('retried') + sum('failed');
-    // Which supervisor's workers take from each queue, and how many of them are alive.
+    const completed = sum('completed');
+    const counts = { pending: sum('pending'), processing: sum('processing'), delayed: sum('delayed'), failed: s.jobs.failed_total };
+    const labels = { overview: 'Overview', pending: 'Pending', processing: 'Processing', delayed: 'Delayed', recent: 'Recent', failed: 'Failed' };
+    const nav = `<nav class="subnav">${queueTabs.map((id) => `<a href="#queue/${id}" class="${ui.queueTab === id ? 'on' : ''}">${labels[id]}${counts[id] ? `<span class="count ${id === 'failed' ? 'bad' : ''}">${int(counts[id])}${id === 'failed' && s.jobs.failed_more ? '+' : ''}</span>` : ''}</a>`).join('')}</nav>`;
+    const quiet = (n, strong = false) => n ? (strong ? `<b>${int(n)}</b>` : int(n)) : '<span class="faint">0</span>';
+    const jobName = (job) => `<span class="mono" title="${esc(job.job)}">${esc(short(job.job))}</span>`;
+    const table = (head, rows, list, total) => `<div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>${more(list, total)}`;
+
+    // Jobs standing in a state now, one by one.
+    if (listed.includes(ui.queueTab)) {
+        const state = ui.queueTab;
+        const [heading, time] = {
+            pending: ['Waiting', (job) => job.available_at ? span(s.now - job.available_at) : '–'],
+            processing: ['Running', (job) => job.reserved_at ? span(s.now - job.reserved_at) : '–'],
+            delayed: ['Due in', (job) => job.available_at ? span(job.available_at - s.now) : '–'],
+        }[state];
+        // The list arrives with the answer after the tab is opened.
+        if (s.jobs.list_state !== state) { return `${nav}<section class="card">${empty('Loading…', '')}</section>`; }
+        const rows = s.jobs.list.slice(0, ui.shown.listed).map((job) => {
+            const key = state[0] + job.id, open = ui.open.has(key);
+            return `<tr class="row expandable" data-open="${esc(key)}"><td class="name">${jobName(job)}</td><td><span class="chip">${esc(job.queue)}</span></td><td class="r num">${quiet(job.attempts)}</td><td class="r num">${time(job)}</td></tr>`
+                + (open ? `<tr class="detail"><td colspan="4"><dl class="kv"><dt>Job</dt><dd class="mono">${esc(job.job)}</dd><dt>Id</dt><dd class="mono">${esc(job.id)}</dd></dl><pre>${esc(JSON.stringify(job.data, null, 2))}</pre></td></tr>` : '');
+        }).join('');
+        const cut = counts[state] > s.jobs.list.length ? `<span class="muted">first ${s.jobs.list.length} of ${int(counts[state])}</span>` : '';
+        return `${nav}${bare(rows ? table(`<th>Job</th><th>Queue</th><th class="r">Tries</th><th class="r">${heading}</th>`, rows, 'listed', s.jobs.list.length) : empty(`Nothing ${state === 'processing' ? 'running' : state}`, ''), cut)}`;
+    }
+
+    // The latest tries, with how each ended.
+    if (ui.queueTab === 'recent') {
+        const outcome = { completed: ['ok', 'Completed'], retrying: ['warn', 'Will retry'], failed: ['bad', 'Failed'] };
+        const shown = s.jobs.recent.filter((job) => ui.jobFilter === 'all' || job.outcome === ui.jobFilter);
+        const rows = shown.slice(0, ui.shown.recent).map((job) => {
+            const key = 'j' + job.id + ':' + job.attempts + ':' + job.at, open = ui.open.has(key);
+            return `<tr class="row expandable" data-open="${esc(key)}"><td class="name">${jobName(job)}${job.error ? `<div class="muted" style="font-size:12.5px">${esc(job.error.slice(0, 110))}</div>` : ''}</td>
+                <td><span class="chip">${esc(job.queue)}</span></td><td><span class="pill ${outcome[job.outcome]?.[0] || ''}">${outcome[job.outcome]?.[1] || esc(job.outcome)}</span></td>
+                <td class="r num">${job.attempts}</td><td class="r num">${ms(job.ms)}</td><td class="r muted num">${ago(job.at, s.now)}</td></tr>`
+                + (open ? `<tr class="detail"><td colspan="6"><dl class="kv"><dt>Job</dt><dd class="mono">${esc(job.job)}</dd><dt>Id</dt><dd class="mono">${esc(job.id)}</dd>${job.error ? `<dt>Error</dt><dd>${esc(job.error)}</dd>` : ''}</dl></td></tr>` : '');
+        }).join('');
+        const filters = `<div class="seg">${[['all', 'All'], ['completed', 'Completed'], ['retrying', 'Will retry'], ['failed', 'Failed']].map(([id, label]) => `<button data-job-filter="${id}" class="${ui.jobFilter === id ? 'on' : ''}">${label}</button>`).join('')}</div>`;
+        return `${nav}${bare(rows ? table('<th>Job</th><th>Queue</th><th>Outcome</th><th class="r">Try</th><th class="r">Took</th><th class="r">Ended</th>', rows, 'recent', shown.length) : empty('Nothing yet', ''), filters)}`;
+    }
+
+    // Given up on, kept until retried or forgotten.
+    if (ui.queueTab === 'failed') {
+        const rows = s.jobs.failed.slice(0, ui.shown.failed).map((job) => {
+            const key = 'f' + job.id, open = ui.open.has(key);
+            return `<tr class="row expandable" data-open="${esc(key)}"><td class="name">${jobName(job)}<div class="muted" style="font-size:12.5px">${esc((job.error || '').slice(0, 110))}</div></td>
+                <td><span class="chip">${esc(job.queue)}</span></td><td class="r num">${job.attempts}</td><td class="r muted num">${ago(job.failed_at, s.now)}</td>
+                <td class="r"><button class="btn" data-job="retry:${esc(job.id)}">Retry</button> <button class="btn danger" data-job="forget:${esc(job.id)}">Forget</button></td></tr>`
+                + (open ? `<tr class="detail"><td colspan="5"><dl class="kv"><dt>Job</dt><dd class="mono">${esc(job.job)}</dd><dt>Id</dt><dd class="mono">${esc(job.id)}</dd><dt>Error</dt><dd>${esc(job.error)}</dd></dl><pre>${esc(JSON.stringify(job.data, null, 2))}</pre></td></tr>` : '');
+        }).join('');
+        const actions = rows ? `<button class="btn" data-job="retry:all">Retry all</button><button class="btn danger" data-job="forget:all">Forget all</button>` : '';
+        return `${nav}${bare(rows ? table('<th>Job</th><th>Queue</th><th class="r">Tries</th><th class="r">Failed</th><th></th>', rows, 'failed', s.jobs.failed.length) : empty('Nothing failed', ''), actions)}`;
+    }
+
+    // The queue as a whole.
     const serving = (name) => {
-        const sups = s.jobs.supervisors.filter((sup) => sup.queues.includes(name));
-        if (!s.jobs.supervisors.length) { return single ? `<span class="ok-text num">${single}</span>` : '<span class="bad-text">none</span>'; }
-        if (!sups.length) { return '<span class="bad-text" title="No supervisor names this queue">none</span>'; }
-        const running = sups.reduce((total, sup) => total + (alive['queue:' + sup.name] || 0), 0);
-        return `<span class="${running ? '' : 'bad-text'} num">${running}</span> <span class="faint">${esc(sups.map((sup) => sup.name).join(', '))}</span>`;
+        if (!s.jobs.supervisors.length) { return alive.queue ? int(alive.queue) : '<span class="bad-text">0</span>'; }
+        const running = s.jobs.supervisors.filter((sup) => sup.queues.includes(name)).reduce((total, sup) => total + (alive['queue:' + sup.name] || 0), 0);
+        return running ? int(running) : '<span class="bad-text">0</span>';
     };
-    const quiet = (n) => n ? int(n) : '<span class="faint">0</span>';
+    const wait = (q) => q.longest_wait === null ? '<span class="faint">–</span>' : `<span class="${q.longest_wait >= 300 ? 'bad-text' : q.longest_wait >= 60 ? 'warn-text' : 'muted'}">${span(q.longest_wait)}</span>`;
     const queueRows = s.jobs.queues.map((q) => `<tr class="row"><td><span class="mono">${esc(q.name)}</span></td>
-        <td class="r num">${q.pending ? `<b>${int(q.pending)}</b>` : quiet(0)}</td><td class="r num">${quiet(q.delayed)}</td><td class="r num">${quiet(q.processing)}</td>
-        <td class="r num">${quiet(q.completed)}</td><td class="r num">${q.retried ? `<span style="color:var(--warn)">${int(q.retried)}</span>` : quiet(0)}</td><td class="r num">${q.failed ? `<span class="bad-text">${int(q.failed)}</span>` : quiet(0)}</td>
-        <td class="r num">${q.longest_wait === null ? '<span class="faint">–</span>' : `<span class="${q.longest_wait >= 300 ? 'bad-text' : q.longest_wait >= 60 ? '' : 'muted'}" ${q.longest_wait >= 60 && q.longest_wait < 300 ? 'style="color:var(--warn);font-weight:600"' : ''}>${span(q.longest_wait)}</span>`}</td>
-        <td class="r num">${q.completed + q.retried + q.failed ? ms(q.avg_ms) : '<span class="faint">–</span>'}</td><td class="r">${serving(q.name)}</td></tr>`).join('');
+        <td class="r num">${quiet(q.pending, true)}</td><td class="r num">${quiet(q.processing)}</td><td class="r num">${quiet(q.delayed)}</td>
+        <td class="r num">${quiet(q.completed)}</td><td class="r num">${q.failed ? `<span class="bad-text">${int(q.failed)}</span>` : quiet(0)}</td>
+        <td class="r num">${wait(q)}</td><td class="r num">${serving(q.name)}</td></tr>`).join('');
     const supervisors = s.jobs.supervisors.map((sup) => {
         const running = alive['queue:' + sup.name] || 0;
-        const state = running >= sup.workers ? 'ok' : running > 0 ? 'warn' : 'bad';
-        return `<section class="card sup"><h3>${esc(sup.name)}<span class="pill ${state}">${running} of ${sup.workers} ${sup.workers === 1 ? 'worker' : 'workers'}</span></h3>
-            <div>${sup.queues.map((q) => `<span class="chip">${esc(q)}</span>`).join('')}</div>
-            <div class="meta"><span>Jobs at once <b>${running * sup.concurrency}</b></span><span>Concurrency <b>${sup.concurrency}</b></span><span>Tries <b>${sup.tries}</b></span></div></section>`;
+        return `<li><span class="mono">${esc(sup.name)}</span><span class="grow">${sup.queues.map((q) => `<span class="chip">${esc(q)}</span>`).join('')}</span><span class="pill ${running >= sup.workers ? 'ok' : running ? 'warn' : 'bad'}">${running}/${sup.workers}</span></li>`;
     }).join('');
-
-    const outcome = { completed: ['ok', 'Completed'], retrying: ['warn', 'Will retry'], failed: ['bad', 'Failed'] };
-    const shown = s.jobs.recent.filter((job) => ui.jobFilter === 'all' || job.outcome === ui.jobFilter);
-    const recent = shown.slice(0, ui.shown.recent).map((job, i) => {
-        const key = 'j' + job.id + ':' + job.attempts + ':' + i, open = ui.open.has(key);
-        return `<tr class="row expandable" data-open="${esc(key)}"><td class="name"><span class="mono" title="${esc(job.job)}">${esc(short(job.job))}</span>${job.error ? `<div class="muted" style="font-size:12.5px">${esc(job.error.slice(0, 110))}</div>` : ''}</td>
-            <td><span class="chip">${esc(job.queue)}</span></td><td><span class="pill ${outcome[job.outcome]?.[0] || ''}">${outcome[job.outcome]?.[1] || esc(job.outcome)}</span></td>
-            <td class="r num">${job.attempts}</td><td class="r num">${ms(job.ms)}</td><td class="r muted num">${ago(job.at, s.now)}</td></tr>`
-            + (open ? `<tr class="detail"><td colspan="6"><dl class="kv"><dt>Job</dt><dd class="mono">${esc(job.job)}</dd><dt>Id</dt><dd class="mono">${esc(job.id)}</dd><dt>Queue</dt><dd class="mono">${esc(job.queue)}</dd><dt>Try</dt><dd>${job.attempts}</dd><dt>Took</dt><dd>${ms(job.ms)}</dd><dt>Ended</dt><dd>${stamp(job.at)}</dd>${job.error ? `<dt>Error</dt><dd>${esc(job.error)}</dd>` : ''}</dl></td></tr>` : '');
-    }).join('');
-    const failed = s.jobs.failed.slice(0, ui.shown.failed).map((job) => {
-        const key = 'f' + job.id, open = ui.open.has(key);
-        return `<tr class="row expandable" data-open="${esc(key)}"><td class="name"><span class="mono">${esc(short(job.job))}</span><div class="muted" style="font-size:12.5px">${esc((job.error || '').slice(0, 110))}</div></td>
-            <td><span class="chip">${esc(job.queue)}</span></td><td class="r num">${job.attempts}</td><td class="r muted num">${ago(job.failed_at, s.now)}</td>
-            <td class="r"><button class="btn" data-job="retry:${esc(job.id)}">Retry</button> <button class="btn danger" data-job="forget:${esc(job.id)}">Forget</button></td></tr>`
-            + (open ? `<tr class="detail"><td colspan="5"><dl class="kv"><dt>Job</dt><dd class="mono">${esc(job.job)}</dd><dt>Id</dt><dd class="mono">${esc(job.id)}</dd><dt>Failed</dt><dd>${job.failed_at ? stamp(job.failed_at) : ''}</dd><dt>Error</dt><dd>${esc(job.error)}</dd></dl><pre>${esc(JSON.stringify(job.data, null, 2))}</pre></td></tr>` : '');
-    }).join('');
-    const actions = s.jobs.failed_total ? `<button class="btn" data-job="retry:all">Retry all</button><button class="btn danger" data-job="forget:all">Forget all</button>` : '';
-    const tabs = `<div class="seg">${[['recent', 'Recent'], ['failed', `Failed for good${s.jobs.failed_total ? ' · ' + int(s.jobs.failed_total) + (s.jobs.failed_more ? '+' : '') : ''}`]].map(([id, label]) => `<button data-tab="${id}" class="${ui.jobTab === id ? 'on' : ''}">${label}</button>`).join('')}</div>`;
-    const filters = `<div class="seg">${[['all', 'All'], ['completed', 'Completed'], ['retrying', 'Will retry'], ['failed', 'Failed']].map(([id, label]) => `<button data-job-filter="${id}" class="${ui.jobFilter === id ? 'on' : ''}">${label}</button>`).join('')}</div>`;
-    const list = ui.jobTab === 'failed'
-        ? card('Jobs', 'given up on, kept until retried or forgotten', failed ? `<div class="table-wrap"><table><thead><tr><th>Job</th><th>Queue</th><th class="r">Tries</th><th class="r">Failed</th><th></th></tr></thead><tbody>${failed}</tbody></table></div>${more('failed', s.jobs.failed.length)}` : empty('Nothing has failed for good', 'A job that runs out of tries is kept here until you retry or forget it.'), actions + tabs)
-        : card('Jobs', 'the latest tries', recent ? `<div class="table-wrap"><table><thead><tr><th>Job</th><th>Queue</th><th>Outcome</th><th class="r">Try</th><th class="r">Took</th><th class="r">Ended</th></tr></thead><tbody>${recent}</tbody></table></div>${more('recent', shown.length)}` : empty(s.jobs.recent.length ? 'None of these lately' : 'No job has run yet', s.jobs.recent.length ? 'Choose another outcome.' : 'Each try of a job is listed here as it ends. This needs <code>EventsProvider</code> registered before <code>QueueProvider</code>.'), filters + tabs);
-
-    return `${queueVerdict(s, alive)}
+    return `${nav}${queueVerdict(s, alive)}
     <div class="grid cards">
-        ${stat('Pending', int(sum('pending')), sum('delayed') ? `${int(sum('delayed'))} more delayed` : 'waiting for a worker now')}
-        ${stat('Processing', int(sum('processing')), 'being run now')}
-        ${stat('Completed', int(completed), `${(completed / s.minutes).toFixed(completed / s.minutes < 10 ? 1 : 0)} a minute`)}
-        ${stat('Failed', `<span class="${sum('failed') ? 'bad-text' : ''}">${int(sum('failed'))}</span>`, `${int(sum('retried'))} more tries failed and were retried`)}
+        <a href="#queue/pending">${stat('Pending', int(counts.pending), counts.delayed ? `+${int(counts.delayed)} delayed` : '')}</a>
+        <a href="#queue/processing">${stat('Processing', int(counts.processing), '')}</a>
+        <a href="#queue/recent">${stat('Completed', int(completed), `${(completed / s.minutes).toFixed(completed / s.minutes < 10 ? 1 : 0)}/min`)}</a>
+        <a href="#queue/failed">${stat('Failed', `<span class="${counts.failed ? 'bad-text' : ''}">${int(counts.failed)}${s.jobs.failed_more ? '+' : ''}</span>`, sum('retried') ? `${int(sum('retried'))} retried` : '')}</a>
     </div>
-    <div class="section">${card('Queues', longest === null ? 'nothing waiting' : `longest wait ${span(longest)}`, `<div class="table-wrap"><table><thead><tr><th>Queue</th><th class="r" title="May be taken by a worker now">Pending</th><th class="r" title="Waiting for their time">Delayed</th><th class="r" title="Taken by a worker, not yet reported on">Processing</th><th class="r">Completed</th><th class="r" title="Tries that failed and were tried again">Retried</th><th class="r" title="Given up on">Failed</th><th class="r" title="How long the oldest pending job has waited">Longest wait</th><th class="r">Avg time</th><th class="r">Workers</th></tr></thead><tbody>${queueRows}</tbody></table></div>`)}</div>
-    ${supervisors ? `<div class="grid three section">${supervisors}</div>` : ''}
-    <div class="section">${card('Throughput', 'tries, by time', `<div class="body">${chart(bins(s.jobs.series, s.since, s.minutes), 'tries')}</div>`, legend)}</div>
-    <div class="section">${card('By job', `${int(s.jobs.total)} tries: which are slow, which fail`, measuredTable('jobs', s.jobs, (name) => `<span class="mono" title="${esc(name)}">${esc(short(name))}</span>`, 'Job') || empty('No job has run yet', 'A job is counted each time a worker tries it. This needs <code>EventsProvider</code> registered before <code>QueueProvider</code>.'))}</div>
-    <div class="section">${list}</div>`;
+    <div class="grid two section" style="grid-template-columns: minmax(0, 2fr) minmax(0, 1fr)">
+        ${card('Queues', '', `<div class="table-wrap"><table><thead><tr><th>Queue</th><th class="r">Pending</th><th class="r">Processing</th><th class="r">Delayed</th><th class="r">Completed</th><th class="r">Failed</th><th class="r" title="How long the oldest pending job has waited">Wait</th><th class="r">Workers</th></tr></thead><tbody>${queueRows}</tbody></table></div>`)}
+        ${supervisors ? card('Supervisors', '', `<ul class="list">${supervisors}</ul>`) : ''}
+    </div>
+    <div class="section">${card('Throughput', '', `<div class="body">${chart(bins(s.jobs.series, s.since, s.minutes), 'tries')}</div>`, legend)}</div>
+    <div class="section">${card('Jobs', '', measuredTable('jobs', s.jobs, (name) => `<span class="mono" title="${esc(name)}">${esc(short(name))}</span>`, 'Job') || empty('Nothing yet', ''))}</div>`;
 }
 
 function schedule(s) {
@@ -525,8 +576,8 @@ function workers(s) {
 
 function exceptionRows(s, list, prefix) {
     if (!list.length) { return empty('No exceptions', 'What a request, a job or a task throws is kept here with where it came from.'); }
-    return `<div class="table-wrap"><table><tbody>${list.map((e, i) => {
-        const key = prefix + e.at + ':' + i, open = ui.open.has(key), d = e.detail || {};
+    return `<div class="table-wrap"><table><tbody>${list.map((e) => {
+        const d = e.detail || {}, key = prefix + e.at + ':' + (d.class || '') + ':' + (d.during || '') + ':' + String(d.message ?? e.title).slice(0, 60), open = ui.open.has(key);
         return `<tr class="row expandable" data-open="${esc(key)}"><td class="name"><span class="bad-text mono">${esc(short(d.class || 'Error'))}</span> <span>${esc((d.message ?? e.title).slice(0, 160))}</span><div class="muted" style="font-size:12.5px">${esc(d.during || '')}</div></td><td class="r muted num">${ago(e.at, s.now)}</td></tr>`
             + (open ? `<tr class="detail"><td colspan="2"><dl class="kv"><dt>Exception</dt><dd class="mono">${esc(d.class)}</dd><dt>Message</dt><dd>${esc(d.message)}</dd><dt>Thrown at</dt><dd class="mono">${esc(d.file)}:${esc(d.line)}</dd><dt>During</dt><dd>${esc(d.during)}</dd><dt>When</dt><dd>${stamp(e.at)}</dd></dl><pre>${(d.trace || []).map((line, n) => `<b>#${n}</b> ${esc(line)}`).join('\n')}</pre></td></tr>` : '');
     }).join('')}</tbody></table></div>`;
@@ -577,9 +628,8 @@ function toast(text) {
 }
 
 document.addEventListener('click', async (event) => {
-    const target = event.target.closest('[data-range], [data-pause], [data-theme-toggle], [data-sort], [data-job], [data-more], [data-tab], [data-job-filter], [data-open]');
+    const target = event.target.closest('[data-range], [data-pause], [data-theme-toggle], [data-sort], [data-job], [data-more], [data-job-filter], [data-open]');
     if (!target) { return; }
-    if (target.dataset.tab) { ui.jobTab = target.dataset.tab; render(); return; }
     if (target.dataset.jobFilter) { ui.jobFilter = target.dataset.jobFilter; ui.shown.recent = 25; render(); return; }
     if (target.dataset.more) { ui.shown[target.dataset.more] += 25; render(); return; }
     if (target.dataset.range) { ui.minutes = Number(target.dataset.range); store.set('minutes', ui.minutes); render(); refresh(); return; }
@@ -636,10 +686,24 @@ document.addEventListener('mousemove', (event) => {
         }
     }
 });
-window.addEventListener('hashchange', () => {
-    const page = location.hash.slice(1);
-    if (pages.some(([id]) => id === page)) { ui.page = page; ui.filter = ''; window.scrollTo(0, 0); render(); }
-});
+// The address says the page and, for the queue, which part of it: #queue/pending.
+function route(first = false) {
+    const [page, part] = location.hash.slice(1).split('/');
+    if (!pages.some(([id]) => id === page)) { return; }
+    const tab = page === 'queue' && queueTabs.includes(part) ? part : 'overview';
+    const moved = page !== ui.page || tab !== ui.queueTab;
+    if (page !== ui.page) { ui.filter = ''; }
+    ui.page = page;
+    ui.queueTab = tab;
+    if (first || !moved) { return; }
+    ui.shown.listed = 25;
+    window.scrollTo(0, 0);
+    render();
+    // A list of jobs is not in what was last received: ask now, not at the next tick.
+    if (page === 'queue' && listed.includes(tab)) { refresh(); }
+}
+window.addEventListener('hashchange', () => route());
+route(true);
 
 refresh();
 // While the tab is in view and not paused; a chart being read is not redrawn under the pointer.

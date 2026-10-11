@@ -33,7 +33,11 @@ final class RecordRequests implements MiddlewareInterface
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
         $path = $request->getUri()->getPath();
-        if ($path === $this->own || str_starts_with($path, $this->own . '/')) {
+        // Its own page and what the page asks for. Mounted at the root, that is "/" and "/api", not every path.
+        $own = $this->own === ''
+            ? in_array($path, ['', '/', '/api'], true) || str_starts_with($path, '/api/')
+            : $path === $this->own || str_starts_with($path, $this->own . '/');
+        if ($own) {
             return $handler->handle($request);
         }
         $started = hrtime(true);

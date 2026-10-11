@@ -42,11 +42,15 @@ final class Recorder
     private array $recent = [];
     private int $flushes = 0;
 
+    private readonly Secrets $secrets;
+
     /**
      * @param int $keep Hours the store keeps what was recorded.
+     * @param array<mixed> $hide Words that name a secret; see Secrets.
      */
-    public function __construct(private readonly Store $store, private readonly int $keep = 24)
+    public function __construct(private readonly Store $store, private readonly int $keep = 24, array $hide = [])
     {
+        $this->secrets = new Secrets($hide);
     }
 
     /**
@@ -82,8 +86,9 @@ final class Recorder
      * Keeps an exception to be read on the dashboard.
      *
      * @param string $during What was running: "GET /users/{id}", "job App\Jobs\SendEmail", "task backup".
+     * @param array<int|string, mixed> $data The data of what was running, whose secrets the message may quote.
      */
-    public function exception(\Throwable $error, string $during): void
+    public function exception(\Throwable $error, string $during, array $data = []): void
     {
         // A worker that fails at everything must not fill the store between two writes.
         if (count($this->events) >= 100) {
@@ -95,7 +100,7 @@ final class Recorder
                 . (isset($frame['file']) ? ' at ' . $frame['file'] . ':' . ($frame['line'] ?? 0) : ''), 0, 400);
         }
         // Cut to what a text column holds with room to spare: one huge message must not cost the others their place.
-        $message = mb_strcut($error->getMessage(), 0, 4000);
+        $message = $this->secrets->scrubbed(mb_strcut($error->getMessage(), 0, 4000), $data);
         $this->events[] = [
             'kind' => 'exception',
             'at' => time(),
@@ -122,14 +127,14 @@ final class Recorder
             'detail' => [
                 'id' => (string) $event->message->id, 'queue' => $event->message->queue, 'attempts' => $event->message->attempts,
                 'ms' => round($milliseconds, 2), 'outcome' => $event->error === null ? 'completed' : ($event->gaveUp ? 'failed' : 'retrying'),
-                'error' => $event->error === null ? null : mb_strcut($event->error::class . ': ' . $event->error->getMessage(), 0, 500),
+                'error' => $event->error === null ? null : $this->secrets->scrubbed(mb_strcut($event->error::class . ': ' . $event->error->getMessage(), 0, 500), $event->message->data),
             ],
         ];
         if (count($this->recent) > 25) {
             array_shift($this->recent);
         }
         if ($event->error !== null) {
-            $this->exception($event->error, "job {$event->message->job}, try {$event->message->attempts}" . ($event->gaveUp ? ', the last' : ''));
+            $this->exception($event->error, "job {$event->message->job}, try {$event->message->attempts}" . ($event->gaveUp ? ', the last' : ''), $event->message->data);
         }
     }
 

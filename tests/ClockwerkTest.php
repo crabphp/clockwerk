@@ -21,6 +21,7 @@ use Crab\Schedule\Scheduler;
 use Crab\Clockwerk\Dashboard;
 use Crab\Clockwerk\Recorder;
 use Crab\Clockwerk\RouteNames;
+use Crab\Clockwerk\Secrets;
 use Crab\Clockwerk\Store;
 use Crab\Clockwerk\ClockwerkProvider;
 use Crab\Http\Response;
@@ -37,6 +38,14 @@ final class Greet
         if ($name === 'nobody') {
             throw new \RuntimeException('There is nobody to greet');
         }
+    }
+}
+
+final class Leaky
+{
+    public function handle(string $reset_token): void
+    {
+        throw new \RuntimeException("GET https://mail.example.com/reset/{$reset_token} answered 500");
     }
 }
 
@@ -202,6 +211,18 @@ final class ClockwerkTest extends TestCase
         $waiting = array_column(json_decode((string) $app->handle(new Request('GET', '/clockwerk/api?token=s3cret&minutes=15'))->getBody(), true)['jobs']['queues'], null, 'name')['default'];
         self::assertSame([1, 1, 0, 2], [$waiting['pending'], $waiting['delayed'], $waiting['processing'], $waiting['size']]);
         self::assertLessThan(5, $waiting['longest_wait']);
+        // Asked for, the jobs standing in a state are listed one by one, with their data and nothing named like a secret.
+        $queue->later(900, Greet::class, name: 'much later', options: ['api_key' => 'k-123']);
+        $listed = static fn (string $state): array => json_decode((string) $app->handle(new Request('GET', "/clockwerk/api?token=s3cret&list={$state}"))->getBody(), true)['jobs'];
+        self::assertSame(['waiting'], array_map(static fn (array $job): string => $job['data']['name'], $listed('pending')['list']));
+        $delayed = $listed('delayed');
+        self::assertSame(['delayed', ['later', 'much later']], [$delayed['list_state'], array_map(static fn (array $job): string => $job['data']['name'], $delayed['list'])]);
+        self::assertSame(['api_key' => '(hidden)'], $delayed['list'][1]['data']['options']);
+        self::assertGreaterThan(time(), $delayed['list'][0]['available_at']);
+        self::assertSame([], $listed('processing')['list']);
+        // Not asked for, they are not read; and a state that is none is refused.
+        self::assertSame([], json_decode((string) $app->handle(new Request('GET', '/clockwerk/api?token=s3cret'))->getBody(), true)['jobs']['list']);
+        self::assertSame(422, $app->handle(new Request('GET', '/clockwerk/api?token=s3cret&list=done'))->getStatusCode());
         self::assertSame(0, $app->console->run(['queue:work', '--queue=default', '--stop-when-empty'], $this->quiet()));
 
         $tasks = array_column($state['tasks']['rows'], null, 'name');
@@ -326,6 +347,88 @@ final class ClockwerkTest extends TestCase
         $recorder->exception(new \RuntimeException(str_repeat('é', 70_000)), 'job');
         // Well under the 65,535 bytes of a text column, however it is escaped.
         self::assertLessThan(30_000, strlen((string) json_encode($events->getValue($recorder)[0]['detail'])));
+    }
+
+    public function testItsTablesCanLiveInADatabaseOtherThanTheApplicationsOwn(): void
+    {
+        mkdir($this->directory . '/metrics');
+        $app = new App(new Config([
+            'clockwerk' => ['token' => 's3cret', 'database' => 'metrics'],
+            'log' => ['path' => $this->directory . '/app.log'],
+            'database' => ['default' => 'main', 'connections' => [
+                'main' => ['dsn' => 'sqlite:' . $this->directory . '/app.sqlite', 'migrations' => $this->directory . '/migrations'],
+                'metrics' => ['dsn' => 'sqlite:' . $this->directory . '/metrics.sqlite', 'migrations' => $this->directory . '/metrics'],
+            ]],
+        ]));
+        $app->register(DatabaseProvider::class, ClockwerkProvider::class);
+        $app->router->get('/ping', static fn (): array => ['pong' => true]);
+
+        // The migration is written among that database's, and run with them.
+        self::assertSame(0, $app->console->run(['clockwerk:install'], $this->quiet()));
+        self::assertCount(1, glob($this->directory . '/metrics/*_create_clockwerk_tables.php') ?: []);
+        self::assertSame([], glob($this->directory . '/migrations/*') ?: []);
+        self::assertSame(0, $app->console->run(['migrate', '--database=metrics'], $this->quiet()));
+
+        $app->handle(new Request('GET', '/ping'));
+        $app->container->get(Recorder::class)->flush('test:1');
+        self::assertSame(1, json_decode((string) $app->handle(new Request('GET', '/clockwerk/api?token=s3cret'))->getBody(), true)['requests']['total']);
+
+        // What was recorded is there, and the application's own database holds none of it.
+        $tables = static fn (string $file): array => array_column((new \PDO('sqlite:' . $file))->query("select name from sqlite_master where type = 'table' and name like 'clockwerk%' order by name")->fetchAll(), 'name');
+        self::assertSame(['clockwerk_events', 'clockwerk_metrics', 'clockwerk_workers'], $tables($this->directory . '/metrics.sqlite'));
+        self::assertSame([], is_file($this->directory . '/app.sqlite') ? $tables($this->directory . '/app.sqlite') : []);
+        foreach (glob($this->directory . '/metrics/*') ?: [] as $file) {
+            unlink($file);
+        }
+        rmdir($this->directory . '/metrics');
+    }
+
+    public function testASecretIsKeptOffThePageWhereverItTurnsUp(): void
+    {
+        $secrets = new Secrets(['password', 'token', 'api_key']);
+        $data = ['email' => 'ada@example.com', 'reset_token' => 'tok_9f8e7d6c', 'smtp' => ['Password' => 'hunter2!', 'host' => 'mail.example.com'], 'pin' => 12];
+
+        self::assertSame(['email' => 'ada@example.com', 'reset_token' => '(hidden)', 'smtp' => ['Password' => '(hidden)', 'host' => 'mail.example.com'], 'pin' => 12], $secrets->hidden($data));
+        // The value itself, quoted by an error, as it was and as an address carries it.
+        self::assertSame('GET https://mail.example.com/reset/(hidden) answered 500', $secrets->scrubbed('GET https://mail.example.com/reset/tok_9f8e7d6c answered 500', $data));
+        self::assertSame('login as ada@example.com with (hidden) was refused', $secrets->scrubbed('login as ada@example.com with hunter2%21 was refused', $data));
+        // And what follows a secret's name, whatever data there was.
+        self::assertSame('GET /pay?order=5&api_key=(hidden)&page=2 failed', $secrets->scrubbed('GET /pay?order=5&api_key=sk_live_123&page=2 failed'));
+        self::assertSame('Authorization: (hidden) was rejected; X-Token: (hidden)', (new Secrets(['authorization', 'token']))->scrubbed('Authorization: Bearer abc.def.ghi was rejected; X-Token: zzz'));
+        self::assertSame('Nothing secret here: order 5 of 12', $secrets->scrubbed('Nothing secret here: order 5 of 12', $data));
+
+        // A job that fails with its own secret in the error: the page is given neither.
+        $app = $this->app(['token' => 's3cret']);
+        $queue = $app->container->get(Queue::class);
+        $queue->push(Leaky::class, reset_token: 'tok_9f8e7d6c');
+        // On a queue no supervisor serves and nothing has run on: it is seen all the same.
+        $queue->on('forgotten')->push(Greet::class, name: 'nobody');
+        self::assertSame(0, $app->console->run(['queue:work', '--queue=default', '--stop-when-empty'], $this->quiet()));
+        $app->container->get(Recorder::class)->flush('test:1');
+        $body = (string) $app->handle(new Request('GET', '/clockwerk/api?token=s3cret'))->getBody();
+        self::assertStringNotContainsString('tok_9f8e7d6c', $body);
+        $state = json_decode($body, true);
+        self::assertStringContainsString('reset/(hidden) answered 500', $state['jobs']['failed'][0]['error']);
+        self::assertStringContainsString('reset/(hidden) answered 500', $state['exceptions'][0]['title']);
+        self::assertSame(1, array_column($state['jobs']['queues'], 'pending', 'name')['forgotten']);
+
+        [$output, $read] = $this->captured();
+        self::assertSame(0, $app->console->run(['clockwerk:status'], $output));
+        self::assertStringContainsString('1 failed for good', $read());
+    }
+
+    public function testMountedAtTheRootItStillCountsTheApplicationsRequests(): void
+    {
+        $app = $this->app(['token' => 's3cret', 'path' => '/']);
+        $app->router->get('/ping', static fn (): array => ['pong' => true]);
+
+        self::assertSame(200, $app->handle(new Request('GET', '/'))->getStatusCode());
+        $app->handle(new Request('GET', '/ping'));
+        $app->handle(new Request('GET', '/api?token=s3cret'));
+        $app->container->get(Recorder::class)->flush('test:1');
+
+        $requests = json_decode((string) $app->handle(new Request('GET', '/api?token=s3cret'))->getBody(), true)['requests'];
+        self::assertSame([1, ['GET /ping']], [$requests['total'], array_column($requests['rows'], 'name')]);
     }
 
     public function testWhatIsOlderThanItIsKeptForIsDeleted(): void

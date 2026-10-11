@@ -42,7 +42,7 @@ final readonly class Status implements Command
         $output->table([
             ['Workers', $workers === [] ? 'none heard from' : implode(', ', $workers)],
             ['Requests', self::counted($state['requests'])],
-            ['Jobs', self::counted($state['jobs']) . ", {$pending} pending, {$processing} processing, {$state['jobs']['failed_total']} failed for good"],
+            ['Jobs', self::counted($state['jobs']) . ", {$pending} pending, {$processing} processing, {$state['jobs']['failed_total']}" . ($state['jobs']['failed_more'] ? '+' : '') . ' failed for good'],
             ['Tasks', count($state['tasks']['rows']) . ' scheduled, ' . array_sum(array_column($state['tasks']['rows'], 'runs')) . ' runs, ' . array_sum(array_column($state['tasks']['rows'], 'errors')) . ' failed'],
             ['Exceptions', (string) count($state['exceptions'])],
         ], '  ');

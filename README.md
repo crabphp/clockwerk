@@ -51,7 +51,7 @@ Then open `/clockwerk?token=<your token>`. The token is kept for the browser tab
 | --- | --- |
 | **Overview** | Requests, response time, failures and jobs at a glance, with the slowest routes, what waits in each queue, the workers alive and the latest exceptions |
 | **Requests** | Every route: how often it was asked for, its average and slowest answer, and how often it failed |
-| **Queue** | A verdict first: is it keeping up, and if not, where and why. Then each queue by pending, delayed, processing, completed, retried and failed, with how long its oldest job has waited and how many workers serve it; each supervisor; every job class; the latest tries one by one with how each ended; and the jobs that failed for good, which you can retry or forget |
+| **Queue** | Whether it is keeping up and where it is not; each queue's pending, processing, delayed, completed and failed jobs, its longest wait and its workers; every job class. Sub-pages list the jobs standing in a state one by one (pending, processing, delayed), the latest tries with how each ended, and the failed jobs, which you can retry or forget |
 | **Schedule** | Every scheduled task: when it runs, when it runs next, how it has run and whether it is failing |
 | **Workers** | Every worker process, HTTP, queue and scheduler: how long it has been up, its memory and how much it has handled |
 | **Exceptions** | What requests, jobs and tasks threw, each with where it came from and its trace |
@@ -75,6 +75,29 @@ The range at the top, from 15 minutes to 24 hours, applies to every page. The pa
 | `clockwerk.interval` | `5.0` | Seconds between two writes of a worker's counts |
 | `clockwerk.keep` | `24` | Hours what was recorded is kept |
 | `clockwerk.hide` | `password`, `passwd`, `secret`, `token`, `api_key`, `apikey`, `authorization`, `cookie` | A failed job's fields whose names contain one of these words are shown as `(hidden)` |
+
+### A database of its own
+
+To keep the dashboard's tables apart from your application's, name one of your configured databases:
+
+```php
+// config/database.php
+'default' => 'main',
+'connections' => [
+    'main' => ['dsn' => env('DB_DSN'), 'migrations' => dirname(__DIR__) . '/database/migrations'],
+    'metrics' => ['dsn' => env('METRICS_DSN'), 'migrations' => dirname(__DIR__) . '/database/metrics'],
+],
+
+// config/clockwerk.php
+return ['database' => 'metrics'];
+```
+
+```sh
+php cua clockwerk:install
+php cua migrate --database=metrics
+```
+
+The migration is written among that database's, and everything the dashboard records goes there.
 
 ### Guarding it your own way
 

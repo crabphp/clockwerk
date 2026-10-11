@@ -8,7 +8,7 @@ use Crab\Contracts\Config\Config;
 use Crab\Contracts\Console\Console;
 use Crab\Contracts\Container\Container;
 use Crab\Contracts\Database\Database;
-use Crab\Contracts\Database\Migrator;
+use Crab\Contracts\Database\Migrators;
 use Crab\Contracts\Events\Dispatcher;
 use Crab\Contracts\Http\MiddlewareStack;
 use Crab\Contracts\Queue\JobRan;
@@ -82,6 +82,7 @@ final class ClockwerkProvider implements WorkerProvider
         $container->singleton(Recorder::class, static fn (Container $container): Recorder => new Recorder(
             $container->get(Store::class),
             max(1, (int) $container->get(Config::class)->get('clockwerk.keep')),
+            (array) $container->get(Config::class)->get('clockwerk.hide'),
         ));
         $container->singleton(Dashboard::class, static fn (Container $container): Dashboard => new Dashboard(
             $container->get(Store::class),
@@ -115,7 +116,7 @@ final class ClockwerkProvider implements WorkerProvider
         if ($container->has(Console::class)) {
             $console = $container->get(Console::class);
             $console->add('clockwerk:status', Status::class);
-            if ($container->has(Migrator::class)) {
+            if ($container->has(Migrators::class)) {
                 $console->add('clockwerk:install', InstallClockwerk::class);
             }
         }

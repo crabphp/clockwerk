@@ -21,15 +21,24 @@ final readonly class Dashboard
      */
     private const FAILED_SHOWN = 200;
 
+    /**
+     * How many jobs of one state the page is given at most.
+     */
+    private const LISTED = 100;
+
+    private Secrets $secrets;
+
     public function __construct(private Store $store, private Config $config, private ContainerInterface $container)
     {
+        $this->secrets = new Secrets((array) $config->get('clockwerk.hide'));
     }
 
     /**
      * @param int $minutes How far back the counts go.
+     * @param string $list A state whose jobs to list one by one as well: "pending", "delayed" or "processing".
      * @return array<string, mixed>
      */
-    public function state(int $minutes = 60): array
+    public function state(int $minutes = 60, string $list = ''): array
     {
         $minutes = max(5, min($minutes, 24 * 60));
         $now = time();
@@ -41,7 +50,7 @@ final readonly class Dashboard
             'minutes' => $minutes,
             'since' => $since,
             'requests' => $this->measured('request', $since),
-            'jobs' => $this->measured('job', $since) + $this->queue($since, $now),
+            'jobs' => $this->measured('job', $since) + $this->queue($since, $now, $list),
             'tasks' => $this->tasks($since),
             // A worker is alive while it was heard from within three of its writes.
             'workers' => $this->store->workers($now - (int) ceil($interval * 3) - 2),
@@ -86,10 +95,10 @@ final readonly class Dashboard
      *
      * @return array<string, mixed>
      */
-    private function queue(int $since, int $now): array
+    private function queue(int $since, int $now, string $list = ''): array
     {
         if (!$this->container->has(QueueStore::class)) {
-            return ['installed' => false, 'supervisors' => [], 'queues' => [], 'recent' => [], 'failed' => [], 'failed_total' => 0, 'failed_more' => false];
+            return ['installed' => false, 'supervisors' => [], 'queues' => [], 'list' => [], 'list_state' => '', 'recent' => [], 'failed' => [], 'failed_total' => 0, 'failed_more' => false];
         }
         $store = $this->container->get(QueueStore::class);
         $names = [(string) $this->config->get('queue.queue', 'default') => true];
@@ -106,6 +115,10 @@ final readonly class Dashboard
                 'concurrency' => (int) ($settings['concurrency'] ?? $this->config->get('queue.concurrency', 1)),
                 'tries' => (int) ($settings['tries'] ?? $this->config->get('queue.tries', 3)),
             ];
+        }
+        // And any queue that holds a job, declared or not: a backlog no supervisor serves is the one to see.
+        foreach ($store->queues() as $queue) {
+            $names[$queue] = true;
         }
         // The latest, and one more to know that there are more: a backlog of thousands is not read on every look.
         $failed = $store->failed(self::FAILED_SHOWN + 1);
@@ -145,36 +158,38 @@ final readonly class Dashboard
         foreach (array_reverse($failed) as $message) {
             $shown[] = [
                 'id' => (string) $message->id, 'job' => $message->job, 'queue' => $message->queue, 'attempts' => $message->attempts,
-                'error' => $message->error === null ? null : mb_strcut($message->error, 0, 2000), 'failed_at' => $message->failedAt,
-                'data' => $this->hidden($message->data),
+                'error' => $message->error === null ? null : $this->secrets->scrubbed(mb_strcut($message->error, 0, 2000), $message->data), 'failed_at' => $message->failedAt,
+                'data' => $this->secrets->hidden($message->data),
             ];
         }
-        return ['installed' => true, 'supervisors' => $supervisors, 'queues' => $queues, 'recent' => $recent, 'failed' => $shown, 'failed_total' => count($shown), 'failed_more' => $more];
+        return ['installed' => true, 'supervisors' => $supervisors, 'queues' => $queues, 'list' => $this->listed($store, array_column($queues, 'name'), $list, $now), 'list_state' => $list, 'recent' => $recent, 'failed' => $shown, 'failed_total' => count($shown), 'failed_more' => $more];
     }
 
     /**
-     * A job's data with the values of the fields named in "clockwerk.hide"
-     * left out, at any depth: a password or a reset token pushed with a
-     * job is not for everyone who may open the dashboard.
+     * The jobs standing in one state now, across the queues, one by one:
+     * what waits, what is being run, what is put off until later.
      *
-     * @param array<int|string, mixed> $data
-     * @return array<int|string, mixed>
+     * @param list<string> $queues
+     * @return list<array<string, mixed>>
      */
-    private function hidden(array $data): array
+    private function listed(QueueStore $store, array $queues, string $state, int $now): array
     {
-        $hide = array_map(strtolower(...), array_map(strval(...), (array) $this->config->get('clockwerk.hide')));
-        $walk = static function (array $values) use (&$walk, $hide): array {
-            foreach ($values as $name => $value) {
-                $lower = strtolower((string) $name);
-                $secret = false;
-                foreach ($hide as $word) {
-                    $secret = $secret || ($word !== '' && str_contains($lower, $word));
-                }
-                $values[$name] = $secret ? '(hidden)' : (is_array($value) ? $walk($value) : $value);
+        if (!in_array($state, ['pending', 'delayed', 'processing'], true)) {
+            return [];
+        }
+        $jobs = [];
+        foreach ($queues as $queue) {
+            foreach ($store->jobs($queue, $state, $now, self::LISTED) as $message) {
+                $jobs[] = [
+                    'id' => (string) $message->id, 'job' => $message->job, 'queue' => $message->queue, 'attempts' => $message->attempts,
+                    'available_at' => $message->availableAt, 'reserved_at' => $message->reservedAt, 'data' => $this->secrets->hidden($message->data),
+                ];
             }
-            return $values;
-        };
-        return $walk($data);
+        }
+        // Across the queues, by the time that matters: taken longest ago, waiting longest, next to come due.
+        $by = $state === 'processing' ? 'reserved_at' : 'available_at';
+        usort($jobs, static fn (array $a, array $b): int => ($a[$by] ?? 0) <=> ($b[$by] ?? 0));
+        return array_slice($jobs, 0, self::LISTED);
     }
 
     /**

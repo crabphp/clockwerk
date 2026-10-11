@@ -8,11 +8,11 @@ use Crab\Contracts\Config\Config;
 use Crab\Contracts\Console\Command;
 use Crab\Contracts\Console\Input;
 use Crab\Contracts\Console\Output;
-use Crab\Contracts\Database\Migrator;
+use Crab\Contracts\Database\Migrators;
 
 final readonly class InstallClockwerk implements Command
 {
-    public function __construct(private Migrator $migrator, private Config $config)
+    public function __construct(private Migrators $migrators, private Config $config)
     {
     }
 
@@ -23,15 +23,18 @@ final readonly class InstallClockwerk implements Command
 
     public function handle(Input $input, Output $output): int
     {
+        // Into the migrations of the database the table is kept in, which need not be the default one.
+        $database = $this->config->get('clockwerk.database');
+        $migrator = $this->migrators->migrator(is_string($database) && $database !== '' ? $database : null);
         $prefix = (string) $this->config->get('clockwerk.table');
         $name = "create_{$prefix}_tables";
-        foreach (array_keys($this->migrator->status()) as $existing) {
+        foreach (array_keys($migrator->status()) as $existing) {
             if (str_ends_with($existing, $name)) {
                 $output->line("Your migrations already have {$existing}; nothing was written.");
                 return 0;
             }
         }
-        $file = $this->migrator->make($name);
+        $file = $migrator->make($name);
         file_put_contents($file, self::migration($prefix));
         $output->line("Created {$file}");
         $output->line('Run `migrate` to create the tables.');
