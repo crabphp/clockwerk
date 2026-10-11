@@ -519,7 +519,7 @@ final class ClockwerkTest extends TestCase
             'cache' => ['store' => 'array'],
             'queue' => ['tries' => 1, 'supervisors' => ['mail' => ['queues' => ['mail']], 'rest' => ['queues' => ['default']]]],
             'log' => ['path' => $this->directory . '/app.log'],
-            'database' => ['dsn' => 'sqlite:' . $this->directory . '/app.sqlite', 'migrations' => $this->directory . '/migrations'],
+            'database' => ['connections' => ['main' => ['dsn' => 'sqlite:' . $this->directory . '/app.sqlite', 'migrations' => $this->directory . '/migrations']]],
         ]));
         $app->register(DatabaseProvider::class, EventsProvider::class, CacheProvider::class, QueueProvider::class, ScheduleProvider::class, ClockwerkProvider::class);
         foreach (['queue:install', 'clockwerk:install', 'clockwerk:install', 'migrate'] as $command) {
