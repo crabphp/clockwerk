@@ -12,17 +12,14 @@ Use it to answer, without opening a terminal: is everything up, what is slow, wh
 composer require crabphp/clockwerk
 ```
 
-Register the provider after the framework's, and before your own:
+The framework providers are registered by default. Add the dashboard provider before your own:
 
 ```php
 // app.php
+use App\Providers\AppProvider;
 use Crab\Clockwerk\ClockwerkProvider;
 
 ->withProviders([
-    DatabaseProvider::class,
-    EventsProvider::class,       // for jobs and scheduled tasks
-    QueueProvider::class,
-    ScheduleProvider::class,
     ClockwerkProvider::class,
     AppProvider::class,
 ])
@@ -124,7 +121,7 @@ Retrying and forgetting jobs is accepted only from the dashboard's own page: a r
 - **Failed jobs:** the latest 200 are listed, with the fields named in `clockwerk.hide` left out. Their exception traces carry no arguments.
 - **When the database is down** the counts of that time are lost, not kept: a worker never holds more than the current minute in memory.
 - **A worker that is killed** takes its last few seconds of counts with it, and leaves the list within three intervals.
-- **Jobs and tasks need `EventsProvider`** registered before the queue and schedule providers. Requests are always recorded.
+- **Jobs and tasks use the default events provider**, which is registered before the queue and schedule. Requests are always recorded.
 - **The page is one file** with its styles and script inside it. It loads nothing from anywhere else.
 
 ## How it is built
