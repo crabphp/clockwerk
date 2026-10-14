@@ -78,11 +78,11 @@ final class ClockwerkTest extends TestCase
 
     public function testARequestIsNamedAfterTheRouteItMatched(): void
     {
-        $router = (new Router())
-            ->get('/', static fn () => '')
-            ->get('/users/{id}', static fn (int $id) => '')
-            ->get('/files/{path:.+}', static fn (string $path) => '')
-            ->post('/users/{id}/posts/{slug:[a-z-]+}', static fn (int $id, string $slug) => '');
+        $router = new Router();
+        $router->get('/', static fn () => '');
+        $router->get('/users/{id}', static fn (int $id) => '');
+        $router->get('/files/{path:.+}', static fn (string $path) => '');
+        $router->post('/users/{id}/posts/{slug:[a-z-]+}', static fn (int $id, string $slug) => '');
         $names = new RouteNames($router);
 
         self::assertSame('/', $names->of('GET', '/'));
@@ -95,7 +95,10 @@ final class ClockwerkTest extends TestCase
         self::assertNull($names->of('DELETE', '/users/42'));
 
         // A HEAD route of its own, and an expression with the character this matcher uses as its delimiter.
-        $more = new RouteNames((new Router())->add('HEAD', '/head/{id}', static fn (int $id) => '')->get('/tilde/{id:[a-z~]+}', static fn (string $id) => ''));
+        $other = new Router();
+        $other->add('HEAD', '/head/{id}', static fn (int $id) => '');
+        $other->get('/tilde/{id:[a-z~]+}', static fn (string $id) => '');
+        $more = new RouteNames($other);
         self::assertSame('/head/{id}', $more->of('HEAD', '/head/5'));
         self::assertSame('/tilde/{id:[a-z~]+}', $more->of('GET', '/tilde/a~b'));
         self::assertSame('/tilde/{id:[a-z~]+}', $more->of('HEAD', '/tilde/a~b'));

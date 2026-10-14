@@ -104,14 +104,19 @@ final class ClockwerkProvider implements WorkerProvider
         // The page holds nothing of the application: it is a shell that asks for what to show, and
         // says what is missing when it is refused. With the token it is open, so that it can be
         // loaded again without the token in the address; middleware of the application's own guards it too.
-        $container->get(Router::class)->get($path === '' ? '/' : $path, ShowDashboard::class, $guards);
-        $container->get(Router::class)->group(static function (Router $router) use ($queue): void {
+        $router = $container->get(Router::class);
+        $router->get($path === '' ? '/' : $path, ShowDashboard::class)->middleware(...$guards);
+        $api = $router->middleware(...($guards === [] ? [Gate::class] : $guards));
+        if ($path !== '') {
+            $api = $api->prefix($path);
+        }
+        $api->group(static function (Router $router) use ($queue): void {
             $router->get('/api', ShowState::class);
             if ($queue) {
-                $router->post('/api/jobs/retry', RetryJob::class, [OwnPage::class]);
-                $router->post('/api/jobs/forget', ForgetJob::class, [OwnPage::class]);
+                $router->post('/api/jobs/retry', RetryJob::class)->middleware(OwnPage::class);
+                $router->post('/api/jobs/forget', ForgetJob::class)->middleware(OwnPage::class);
             }
-        }, prefix: $path, middleware: $guards === [] ? [Gate::class] : $guards);
+        });
 
         if ($container->has(Console::class)) {
             $console = $container->get(Console::class);
