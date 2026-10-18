@@ -58,10 +58,12 @@ final class RouteNames
         }
         $pattern = null;
         foreach ($this->dynamic[$method] ?? [] as [$expression, $candidate]) {
-            if (preg_match($expression, $path) === 1) {
-                $pattern = $candidate;
-                break;
+            if (preg_match($expression, $path) !== 1) {
+                continue;
             }
+
+            $pattern = $candidate;
+            break;
         }
         // As the router does: a HEAD with no route of its own is answered by the GET route.
         if ($pattern === null && $method === 'HEAD') {

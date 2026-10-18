@@ -104,11 +104,15 @@ final class DashboardTest extends TestCase
      */
     private function scenario(string $name, string $argument = ''): void
     {
-        $process = proc_open(['node', __DIR__ . '/dashboard-test.js', dirname(__DIR__) . '/resources/dashboard.html', $name, $argument], [
-            0 => ['pipe', 'r'],
-            1 => ['pipe', 'w'],
-            2 => ['pipe', 'w'],
-        ], $pipes);
+        $process = proc_open(
+            ['node', __DIR__ . '/dashboard-test.js', dirname(__DIR__) . '/resources/dashboard.html', $name, $argument],
+            [
+                0 => ['pipe', 'r'],
+                1 => ['pipe', 'w'],
+                2 => ['pipe', 'w'],
+            ],
+            $pipes,
+        );
         self::assertIsResource($process, 'Install Node.js to run the dashboard behavior tests.');
         fclose($pipes[0]);
         $output = stream_get_contents($pipes[1]);

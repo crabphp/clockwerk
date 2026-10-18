@@ -48,8 +48,11 @@ final class Recorder
      * @param int $keep Hours the store keeps what was recorded.
      * @param array<mixed> $hide Words that name a secret; see Secrets.
      */
-    public function __construct(private readonly Store $store, private readonly int $keep = 24, array $hide = [])
-    {
+    public function __construct(
+        private readonly Store $store,
+        private readonly int $keep = 24,
+        array $hide = [],
+    ) {
         $this->secrets = new Secrets($hide);
     }
 
@@ -73,7 +76,15 @@ final class Recorder
         $bucket = intdiv(time(), 60) * 60;
         $name = mb_substr($name, 0, 160);
         $key = "{$kind}\0{$name}\0{$bucket}";
-        $metric = $this->metrics[$key] ?? ['kind' => $kind, 'name' => $name, 'bucket' => $bucket, 'runs' => 0, 'total_ms' => 0.0, 'max_ms' => 0.0, 'errors' => 0];
+        $metric = $this->metrics[$key] ?? [
+            'kind' => $kind,
+            'name' => $name,
+            'bucket' => $bucket,
+            'runs' => 0,
+            'total_ms' => 0.0,
+            'max_ms' => 0.0,
+            'errors' => 0,
+        ];
         ++$metric['runs'];
         $metric['total_ms'] += $milliseconds;
         $metric['max_ms'] = max($metric['max_ms'], $milliseconds);
@@ -96,8 +107,14 @@ final class Recorder
         }
         $trace = [];
         foreach (array_slice($error->getTrace(), 0, 12) as $frame) {
-            $trace[] = mb_strcut((isset($frame['class']) ? $frame['class'] . ($frame['type'] ?? '::') : '') . $frame['function'] . '()'
-                . (isset($frame['file']) ? ' at ' . $frame['file'] . ':' . ($frame['line'] ?? 0) : ''), 0, 400);
+            $trace[] = mb_strcut(
+                (isset($frame['class']) ? $frame['class'] . ($frame['type'] ?? '::') : '')
+                . $frame['function']
+                . '()'
+                . (isset($frame['file']) ? ' at ' . $frame['file'] . ':' . ($frame['line'] ?? 0) : ''),
+                0,
+                400,
+            );
         }
         // Cut to what a text column holds with room to spare: one huge message must not cost the others their place.
         $message = mb_strcut($this->secrets->scrubbed($error->getMessage(), $data), 0, 4000);
@@ -105,7 +122,14 @@ final class Recorder
             'kind' => 'exception',
             'at' => time(),
             'title' => $error::class . ': ' . mb_strcut($message, 0, 200),
-            'detail' => ['class' => $error::class, 'message' => $message, 'file' => $error->getFile(), 'line' => $error->getLine(), 'during' => mb_strcut($during, 0, 300), 'trace' => $trace],
+            'detail' => [
+                'class' => $error::class,
+                'message' => $message,
+                'file' => $error->getFile(),
+                'line' => $error->getLine(),
+                'during' => mb_strcut($during, 0, 300),
+                'trace' => $trace,
+            ],
         ];
     }
 
@@ -118,6 +142,11 @@ final class Recorder
         if ($event->gaveUp) {
             $this->count('gaveup', $event->message->queue, $milliseconds, true);
         }
+        if ($event->error === null) {
+            $outcome = 'completed';
+        } else {
+            $outcome = $event->gaveUp ? 'failed' : 'retrying';
+        }
         // The latest few are kept one by one, to be read: the newest, so that under a flood what
         // is shown is what has just happened. The counts above still tell all.
         $this->recent[] = [
@@ -125,16 +154,32 @@ final class Recorder
             'at' => time(),
             'title' => $event->message->job,
             'detail' => [
-                'id' => (string) $event->message->id, 'queue' => $event->message->queue, 'attempts' => $event->message->attempts,
-                'ms' => round($milliseconds, 2), 'outcome' => $event->error === null ? 'completed' : ($event->gaveUp ? 'failed' : 'retrying'),
-                'error' => $event->error === null ? null : mb_strcut($this->secrets->scrubbed($event->error::class . ': ' . $event->error->getMessage(), $event->message->data), 0, 500),
+                'id' => (string) $event->message->id,
+                'queue' => $event->message->queue,
+                'attempts' => $event->message->attempts,
+                'ms' => round($milliseconds, 2),
+                'outcome' => $outcome,
+                'error' => $event->error === null
+                    ? null
+                    : mb_strcut(
+                        $this->secrets->scrubbed(
+                            $event->error::class . ': ' . $event->error->getMessage(),
+                            $event->message->data,
+                        ),
+                        0,
+                        500,
+                    ),
             ],
         ];
         if (count($this->recent) > 25) {
             array_shift($this->recent);
         }
         if ($event->error !== null) {
-            $this->exception($event->error, "job {$event->message->job}, try {$event->message->attempts}" . ($event->gaveUp ? ', the last' : ''), $event->message->data);
+            $this->exception(
+                $event->error,
+                "job {$event->message->job}, try {$event->message->attempts}" . ($event->gaveUp ? ', the last' : ''),
+                $event->message->data,
+            );
         }
     }
 
@@ -171,15 +216,17 @@ final class Recorder
         $this->recent = [];
         $current = intdiv(time(), 60) * 60;
         foreach ($this->metrics as $key => $metric) {
-            if ($metric['bucket'] < $current) {
-                unset($this->metrics[$key]);
+            if ($metric['bucket'] >= $current) {
+                continue;
             }
+
+            unset($this->metrics[$key]);
         }
         $this->store->metrics($worker, $rows);
         $this->store->events($events);
         // Now and then, and not by every worker at once.
-        if (++$this->flushes % 120 === 1 && random_int(1, 4) === 1) {
-            $this->store->prune(time() - $this->keep * 3600);
+        if ((++$this->flushes % 120) === 1 && random_int(1, 4) === 1) {
+            $this->store->prune(time() - ($this->keep * 3600));
         }
     }
 }

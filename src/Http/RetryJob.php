@@ -12,9 +12,9 @@ use Crab\Contracts\Queue\Store;
  */
 final readonly class RetryJob
 {
-    public function __construct(private Store $store)
-    {
-    }
+    public function __construct(
+        private Store $store,
+    ) {}
 
     /**
      * @return array{retried: int}

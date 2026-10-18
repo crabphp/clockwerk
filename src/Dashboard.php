@@ -28,8 +28,11 @@ final readonly class Dashboard
 
     private Secrets $secrets;
 
-    public function __construct(private Store $store, private Config $config, private ContainerInterface $container)
-    {
+    public function __construct(
+        private Store $store,
+        private Config $config,
+        private ContainerInterface $container,
+    ) {
         $this->secrets = new Secrets((array) $config->get('clockwerk.hide'));
     }
 
@@ -42,7 +45,7 @@ final readonly class Dashboard
     {
         $minutes = max(5, min($minutes, 24 * 60));
         $now = time();
-        $since = intdiv($now, 60) * 60 - ($minutes - 1) * 60;
+        $since = (intdiv($now, 60) * 60) - (($minutes - 1) * 60);
         $interval = (float) $this->config->get('clockwerk.interval');
         return [
             'app' => (string) ($this->config->get('clockwerk.name') ?? 'Crab'),
@@ -76,14 +79,19 @@ final readonly class Dashboard
         $rows = [];
         foreach ($this->store->totals($kind, $since) as $row) {
             $rows[] = [
-                'name' => $row['name'], 'runs' => $row['runs'], 'errors' => $row['errors'],
+                'name' => $row['name'],
+                'runs' => $row['runs'],
+                'errors' => $row['errors'],
                 'avg_ms' => $row['runs'] > 0 ? round($row['total_ms'] / $row['runs'], 2) : 0.0,
-                'max_ms' => round($row['max_ms'], 2), 'last' => $row['last'],
+                'max_ms' => round($row['max_ms'], 2),
+                'last' => $row['last'],
             ];
         }
         return [
-            'total' => $total, 'errors' => $errors,
-            'avg_ms' => $total > 0 ? round($time / $total, 2) : 0.0, 'max_ms' => round($max, 2),
+            'total' => $total,
+            'errors' => $errors,
+            'avg_ms' => $total > 0 ? round($time / $total, 2) : 0.0,
+            'max_ms' => round($max, 2),
             'series' => $series,
             'rows' => $rows,
         ];
@@ -98,19 +106,33 @@ final readonly class Dashboard
     private function queue(int $since, int $now, string $list = ''): array
     {
         if (!$this->container->has(QueueStore::class)) {
-            return ['installed' => false, 'supervisors' => [], 'queues' => [], 'list' => [], 'list_state' => '', 'recent' => [], 'failed' => [], 'failed_total' => 0, 'failed_more' => false];
+            return [
+                'installed' => false,
+                'supervisors' => [],
+                'queues' => [],
+                'list' => [],
+                'list_state' => '',
+                'recent' => [],
+                'failed' => [],
+                'failed_total' => 0,
+                'failed_more' => false,
+            ];
         }
         $store = $this->container->get(QueueStore::class);
         $names = [(string) $this->config->get('queue.queue', 'default') => true];
         $supervisors = [];
         foreach ((array) $this->config->get('queue.supervisors', []) as $name => $settings) {
             // One that names no queue takes from the queue's own, as the framework has it.
-            $queues = array_values(array_map(strval(...), (array) ($settings['queues'] ?? [(string) $this->config->get('queue.queue', 'default')])));
+            $queues = array_values(array_map(
+                strval(...),
+                (array) ($settings['queues'] ?? [(string) $this->config->get('queue.queue', 'default')]),
+            ));
             foreach ($queues as $queue) {
                 $names[$queue] = true;
             }
             $supervisors[] = [
-                'name' => (string) $name, 'queues' => $queues,
+                'name' => (string) $name,
+                'queues' => $queues,
                 'workers' => (int) ($settings['workers'] ?? $this->config->get('queue.workers', 1)),
                 'concurrency' => (int) ($settings['concurrency'] ?? $this->config->get('queue.concurrency', 1)),
                 'tries' => (int) ($settings['tries'] ?? $this->config->get('queue.tries', 3)),
@@ -141,11 +163,16 @@ final readonly class Dashboard
             $tries = $tried[$queue]['runs'] ?? 0;
             $errors = $tried[$queue]['errors'] ?? 0;
             $queues[] = [
-                'name' => $queue, 'size' => $counts['pending'] + $counts['delayed'] + $counts['processing'],
-                'pending' => $counts['pending'], 'delayed' => $counts['delayed'], 'processing' => $counts['processing'],
+                'name' => $queue,
+                'size' => $counts['pending'] + $counts['delayed'] + $counts['processing'],
+                'pending' => $counts['pending'],
+                'delayed' => $counts['delayed'],
+                'processing' => $counts['processing'],
                 // How long the pending job that has waited longest has been waiting: how far behind the workers are.
                 'longest_wait' => $counts['oldest'] === null ? null : max(0, $now - $counts['oldest']),
-                'completed' => $tries - $errors, 'failed' => $gaveUp[$queue] ?? 0, 'retried' => max(0, $errors - ($gaveUp[$queue] ?? 0)),
+                'completed' => $tries - $errors,
+                'failed' => $gaveUp[$queue] ?? 0,
+                'retried' => max(0, $errors - ($gaveUp[$queue] ?? 0)),
                 'avg_ms' => $tries > 0 ? round($tried[$queue]['total_ms'] / $tries, 2) : 0.0,
             ];
         }
@@ -157,12 +184,28 @@ final readonly class Dashboard
         // The newest first, and no more than a page can show.
         foreach (array_reverse($failed) as $message) {
             $shown[] = [
-                'id' => (string) $message->id, 'job' => $message->job, 'queue' => $message->queue, 'attempts' => $message->attempts,
-                'error' => $message->error === null ? null : mb_strcut($this->secrets->scrubbed($message->error, $message->data), 0, 2000), 'failed_at' => $message->failedAt,
+                'id' => (string) $message->id,
+                'job' => $message->job,
+                'queue' => $message->queue,
+                'attempts' => $message->attempts,
+                'error' => $message->error === null
+                    ? null
+                    : mb_strcut($this->secrets->scrubbed($message->error, $message->data), 0, 2000),
+                'failed_at' => $message->failedAt,
                 'data' => $this->secrets->hidden($message->data),
             ];
         }
-        return ['installed' => true, 'supervisors' => $supervisors, 'queues' => $queues, 'list' => $this->listed($store, array_column($queues, 'name'), $list, $now), 'list_state' => $list, 'recent' => $recent, 'failed' => $shown, 'failed_total' => count($shown), 'failed_more' => $more];
+        return [
+            'installed' => true,
+            'supervisors' => $supervisors,
+            'queues' => $queues,
+            'list' => $this->listed($store, array_column($queues, 'name'), $list, $now),
+            'list_state' => $list,
+            'recent' => $recent,
+            'failed' => $shown,
+            'failed_total' => count($shown),
+            'failed_more' => $more,
+        ];
     }
 
     /**
@@ -181,14 +224,19 @@ final readonly class Dashboard
         foreach ($queues as $queue) {
             foreach ($store->jobs($queue, $state, $now, self::LISTED) as $message) {
                 $jobs[] = [
-                    'id' => (string) $message->id, 'job' => $message->job, 'queue' => $message->queue, 'attempts' => $message->attempts,
-                    'available_at' => $message->availableAt, 'reserved_at' => $message->reservedAt, 'data' => $this->secrets->hidden($message->data),
+                    'id' => (string) $message->id,
+                    'job' => $message->job,
+                    'queue' => $message->queue,
+                    'attempts' => $message->attempts,
+                    'available_at' => $message->availableAt,
+                    'reserved_at' => $message->reservedAt,
+                    'data' => $this->secrets->hidden($message->data),
                 ];
             }
         }
         // Across the queues, by the time that matters: taken longest ago, waiting longest, next to come due.
         $by = $state === 'processing' ? 'reserved_at' : 'available_at';
-        usort($jobs, static fn (array $a, array $b): int => ($a[$by] ?? 0) <=> ($b[$by] ?? 0));
+        usort($jobs, static fn(array $a, array $b): int => ($a[$by] ?? 0) <=> ($b[$by] ?? 0));
         return array_slice($jobs, 0, self::LISTED);
     }
 
@@ -213,11 +261,15 @@ final readonly class Dashboard
             $name = $task->named();
             $row = $ran[$name] ?? null;
             $rows[] = [
-                'name' => $name, 'when' => $task->expression(), 'one_server' => $task->runsOnOneServer(),
+                'name' => $name,
+                'when' => $task->expression(),
+                'one_server' => $task->runsOnOneServer(),
                 'next' => $task->interval() === null ? $task->next($now)->getTimestamp() : null,
-                'runs' => $row['runs'] ?? 0, 'errors' => $row['errors'] ?? 0,
+                'runs' => $row['runs'] ?? 0,
+                'errors' => $row['errors'] ?? 0,
                 'avg_ms' => $row !== null && $row['runs'] > 0 ? round($row['total_ms'] / $row['runs'], 2) : 0.0,
-                'max_ms' => round($row['max_ms'] ?? 0.0, 2), 'last' => $row['last'] ?? null,
+                'max_ms' => round($row['max_ms'] ?? 0.0, 2),
+                'last' => $row['last'] ?? null,
             ];
         }
         return ['installed' => true, 'rows' => $rows];

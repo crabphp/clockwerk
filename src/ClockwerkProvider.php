@@ -4,6 +4,15 @@ declare(strict_types=1);
 
 namespace Crab\Clockwerk;
 
+use Crab\Clockwerk\Commands\InstallClockwerk;
+use Crab\Clockwerk\Commands\Status;
+use Crab\Clockwerk\Http\ForgetJob;
+use Crab\Clockwerk\Http\Gate;
+use Crab\Clockwerk\Http\OwnPage;
+use Crab\Clockwerk\Http\RecordRequests;
+use Crab\Clockwerk\Http\RetryJob;
+use Crab\Clockwerk\Http\ShowDashboard;
+use Crab\Clockwerk\Http\ShowState;
 use Crab\Contracts\Config\Config;
 use Crab\Contracts\Console\Console;
 use Crab\Contracts\Container\Container;
@@ -17,15 +26,6 @@ use Crab\Contracts\Routing\Router;
 use Crab\Contracts\Schedule\TaskRan;
 use Crab\Contracts\WorkerProvider;
 use Crab\Engine\Process\Worker;
-use Crab\Clockwerk\Commands\InstallClockwerk;
-use Crab\Clockwerk\Commands\Status;
-use Crab\Clockwerk\Http\ForgetJob;
-use Crab\Clockwerk\Http\Gate;
-use Crab\Clockwerk\Http\OwnPage;
-use Crab\Clockwerk\Http\RecordRequests;
-use Crab\Clockwerk\Http\RetryJob;
-use Crab\Clockwerk\Http\ShowDashboard;
-use Crab\Clockwerk\Http\ShowState;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -72,30 +72,43 @@ final class ClockwerkProvider implements WorkerProvider
         ]);
         $container->singleton(Store::class, static function (Container $container): Store {
             if (!$container->has(Database::class)) {
-                throw new \LogicException('The dashboard keeps what it records in the database: register the database provider, DatabaseProvider, before ClockwerkProvider.');
+                throw new \LogicException(
+                    'The dashboard keeps what it records in the database: register the database provider, DatabaseProvider, before ClockwerkProvider.',
+                );
             }
             $config = $container->get(Config::class);
             $database = $container->get(Database::class);
             $name = $config->get('clockwerk.database');
-            return new DatabaseStore(is_string($name) ? $database->connection($name) : $database, (string) $config->get('clockwerk.table'));
+            return new DatabaseStore(
+                is_string($name) ? $database->connection($name) : $database,
+                (string) $config->get('clockwerk.table'),
+            );
         });
-        $container->singleton(Recorder::class, static fn (Container $container): Recorder => new Recorder(
-            $container->get(Store::class),
-            max(1, (int) $container->get(Config::class)->get('clockwerk.keep')),
-            (array) $container->get(Config::class)->get('clockwerk.hide'),
-        ));
-        $container->singleton(Dashboard::class, static fn (Container $container): Dashboard => new Dashboard(
-            $container->get(Store::class),
-            $container->get(Config::class),
-            $container,
-        ));
+        $container->singleton(
+            Recorder::class,
+            static fn(Container $container): Recorder => new Recorder(
+                $container->get(Store::class),
+                max(1, (int) $container->get(Config::class)->get('clockwerk.keep')),
+                (array) $container->get(Config::class)->get('clockwerk.hide'),
+            ),
+        );
+        $container->singleton(
+            Dashboard::class,
+            static fn(Container $container): Dashboard => new Dashboard(
+                $container->get(Store::class),
+                $container->get(Config::class),
+                $container,
+            ),
+        );
 
         // Inside the error handler, so that what a request throws is seen before it becomes a 500.
         $container->get(MiddlewareStack::class)->add(RecordRequests::class);
         if ($container->has(Dispatcher::class)) {
             $events = $container->get(Dispatcher::class);
-            $events->listen(JobRan::class, static fn (JobRan $event) => $container->get(Recorder::class)->job($event));
-            $events->listen(TaskRan::class, static fn (TaskRan $event) => $container->get(Recorder::class)->task($event));
+            $events->listen(JobRan::class, static fn(JobRan $event) => $container->get(Recorder::class)->job($event));
+            $events->listen(TaskRan::class, static fn(TaskRan $event) => $container->get(Recorder::class)->task(
+                $event,
+            ));
         }
 
         $guards = array_values((array) $config->get('clockwerk.middleware'));
@@ -106,7 +119,7 @@ final class ClockwerkProvider implements WorkerProvider
         // loaded again without the token in the address; middleware of the application's own guards it too.
         $router = $container->get(Router::class);
         $router->get($path === '' ? '/' : $path, ShowDashboard::class)->middleware(...$guards);
-        $api = $router->middleware(...($guards === [] ? [Gate::class] : $guards));
+        $api = $router->middleware(...$guards === [] ? [Gate::class] : $guards);
         if ($path !== '') {
             $api = $api->prefix($path);
         }
@@ -147,8 +160,14 @@ final class ClockwerkProvider implements WorkerProvider
             try {
                 $stats = $worker->stats();
                 $container->get(Store::class)->beat([
-                    'id' => $this->worker, 'group_name' => (string) $stats['group'], 'pid' => (int) $stats['pid'], 'host' => substr((string) gethostname(), 0, 120),
-                    'started_at' => $started, 'seen_at' => time(), 'memory' => (int) $stats['memoryBytes'], 'handled' => $recorder->handled(),
+                    'id' => $this->worker,
+                    'group_name' => (string) $stats['group'],
+                    'pid' => (int) $stats['pid'],
+                    'host' => substr((string) gethostname(), 0, 120),
+                    'started_at' => $started,
+                    'seen_at' => time(),
+                    'memory' => (int) $stats['memoryBytes'],
+                    'handled' => $recorder->handled(),
                 ]);
             } catch (\Throwable $error) {
                 $failure ??= $error;
@@ -159,18 +178,26 @@ final class ClockwerkProvider implements WorkerProvider
             }
             // Once, and again only after a write has worked: a dashboard that cannot write must not fill the log.
             if (!$this->complained && $container->has(LoggerInterface::class)) {
-                $container->get(LoggerInterface::class)->warning('The dashboard could not write what it recorded: {message} Have `clockwerk:install` and `migrate` been run?', ['message' => $failure->getMessage(), 'exception' => $failure]);
+                $container->get(
+                    LoggerInterface::class,
+                )->warning('The dashboard could not write what it recorded: {message} Have `clockwerk:install` and `migrate` been run?', [
+                    'message' => $failure->getMessage(),
+                    'exception' => $failure,
+                ]);
             }
             $this->complained = true;
         };
         // As a task of the worker: the database may make its caller wait for a connection.
-        $this->timer = $worker->loop->repeat(max(1.0, (float) $container->get(Config::class)->get('clockwerk.interval')), static function () use ($worker, $write): void {
-            // A worker that is stopping takes no new task; stop() writes what is left.
-            if ($worker->isDraining()) {
-                return;
-            }
-            $worker->spawn($write);
-        });
+        $this->timer = $worker->loop->repeat(
+            max(1.0, (float) $container->get(Config::class)->get('clockwerk.interval')),
+            static function () use ($worker, $write): void {
+                // A worker that is stopping takes no new task; stop() writes what is left.
+                if ($worker->isDraining()) {
+                    return;
+                }
+                $worker->spawn($write);
+            },
+        );
         $worker->spawn($write);
     }
 

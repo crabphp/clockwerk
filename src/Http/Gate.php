@@ -32,14 +32,20 @@ final readonly class Gate implements MiddlewareInterface
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
         if ($this->token === null) {
-            return Response::text("The dashboard is closed: it shows how the application runs, and nothing says who may see it.\n\nSet \"clockwerk.token\" to a secret and open this page with ?token=<the secret>, or name your own middleware in \"clockwerk.middleware\".\n", 403);
+            return Response::text(
+                "The dashboard is closed: it shows how the application runs, and nothing says who may see it.\n\nSet \"clockwerk.token\" to a secret and open this page with ?token=<the secret>, or name your own middleware in \"clockwerk.middleware\".\n",
+                403,
+            );
         }
         $given = $request->getQueryParams()['token'] ?? null;
         if (preg_match('/^Bearer\s+(.+)$/i', $request->getHeaderLine('Authorization'), $match) === 1) {
             $given = $match[1];
         }
         if (!is_string($given) || !hash_equals($this->token, $given)) {
-            return Response::text("The dashboard needs its token: open it with ?token=<the secret in \"clockwerk.token\">.\n", 401);
+            return Response::text(
+                "The dashboard needs its token: open it with ?token=<the secret in \"clockwerk.token\">.\n",
+                401,
+            );
         }
         return $handler->handle($request);
     }

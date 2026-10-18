@@ -26,8 +26,14 @@ final readonly class OwnPage implements MiddlewareInterface
         $json = str_starts_with(strtolower($request->getHeaderLine('Content-Type')), 'application/json');
         $site = strtolower($request->getHeaderLine('Sec-Fetch-Site'));
         $origin = $request->getHeaderLine('Origin');
-        $elsewhere = ($site !== '' && $site !== 'same-origin' && $site !== 'none')
-            || ($origin !== '' && strtolower((string) parse_url($origin, PHP_URL_HOST)) !== strtolower((string) preg_replace('/:\d+$/', '', $request->getHeaderLine('Host'))));
+        $elsewhere =
+            $site !== '' && $site !== 'same-origin' && $site !== 'none'
+            || $origin !== ''
+            && strtolower((string) parse_url($origin, PHP_URL_HOST)) !== strtolower((string) preg_replace(
+                '/:\d+$/',
+                '',
+                $request->getHeaderLine('Host'),
+            ));
         if (!$json || $elsewhere) {
             return Response::text("This is done from the dashboard's own page.\n", 403);
         }

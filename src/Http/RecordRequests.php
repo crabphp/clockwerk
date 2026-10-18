@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Crab\Clockwerk\Http;
 
+use Crab\Clockwerk\Recorder;
+use Crab\Clockwerk\RouteNames;
 use Crab\Contracts\Config\Config;
 use Crab\Contracts\Routing\Router;
 use Crab\Http\HttpException;
-use Crab\Clockwerk\Recorder;
-use Crab\Clockwerk\RouteNames;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -25,8 +25,11 @@ final class RecordRequests implements MiddlewareInterface
     private ?RouteNames $routes = null;
     private readonly string $own;
 
-    public function __construct(private readonly Recorder $recorder, private readonly Router $router, Config $config)
-    {
+    public function __construct(
+        private readonly Recorder $recorder,
+        private readonly Router $router,
+        Config $config,
+    ) {
         $this->own = rtrim((string) $config->get('clockwerk.path'), '/');
     }
 
@@ -53,7 +56,12 @@ final class RecordRequests implements MiddlewareInterface
             }
             throw $error;
         }
-        $this->recorder->measure('request', $this->name($request->getMethod(), $path), (hrtime(true) - $started) / 1e6, $response->getStatusCode() >= 500);
+        $this->recorder->measure(
+            'request',
+            $this->name($request->getMethod(), $path),
+            (hrtime(true) - $started) / 1e6,
+            $response->getStatusCode() >= 500,
+        );
         return $response;
     }
 

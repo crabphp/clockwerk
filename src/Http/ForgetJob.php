@@ -12,9 +12,9 @@ use Crab\Contracts\Queue\Store;
  */
 final readonly class ForgetJob
 {
-    public function __construct(private Store $store)
-    {
-    }
+    public function __construct(
+        private Store $store,
+    ) {}
 
     /**
      * @return array{forgotten: int}

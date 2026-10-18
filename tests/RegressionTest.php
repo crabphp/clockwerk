@@ -29,19 +29,28 @@ final class RegressionTest extends TestCase
         $secrets = new Secrets(['', 'PaSs', 'key.name']);
         $data = ['label' => 'visible', 'PASSWORD' => 'hidden-value', 'nested' => ['key.name' => 'another-value']];
 
-        self::assertSame(['label' => 'visible', 'PASSWORD' => '(hidden)', 'nested' => ['key.name' => '(hidden)']], $secrets->hidden($data));
+        self::assertSame(
+            ['label' => 'visible', 'PASSWORD' => '(hidden)', 'nested' => ['key.name' => '(hidden)']],
+            $secrets->hidden($data),
+        );
         self::assertSame('key.name=(hidden)&keyXname=visible', $secrets->scrubbed('key.name=secret&keyXname=visible'));
-        self::assertSame($data, (new Secrets([]))->hidden($data));
-        self::assertSame('token=visible', (new Secrets([]))->scrubbed('token=visible'));
+        self::assertSame($data, new Secrets([])->hidden($data));
+        self::assertSame('token=visible', new Secrets([])->scrubbed('token=visible'));
     }
 
     public function testSecretArraysHideTheirDescendantsInTextAndKeepShortOrdinaryText(): void
     {
         $secrets = new Secrets(['token']);
-        $data = ['token_bundle' => ['nested' => ['value' => 'a/b c'], 'number' => 12345, 'short' => 'abc'], 'public' => 'normal'];
+        $data = [
+            'token_bundle' => ['nested' => ['value' => 'a/b c'], 'number' => 12_345, 'short' => 'abc'],
+            'public' => 'normal',
+        ];
 
         self::assertSame(['token_bundle' => '(hidden)', 'public' => 'normal'], $secrets->hidden($data));
-        self::assertSame('(hidden) (hidden) (hidden) abc normal', $secrets->scrubbed('a/b c a%2Fb%20c 12345 abc normal', $data));
+        self::assertSame('(hidden) (hidden) (hidden) abc normal', $secrets->scrubbed(
+            'a/b c a%2Fb%20c 12345 abc normal',
+            $data,
+        ));
         self::assertSame('X-TOKEN%3D(hidden)&next=yes', $secrets->scrubbed('X-TOKEN%3Dencoded-secret&next=yes'));
     }
 
@@ -49,9 +58,11 @@ final class RegressionTest extends TestCase
     {
         $written = [];
         $store = $this->createStub(Store::class);
-        $store->method('events')->willReturnCallback(static function (array $events) use (&$written): void {
-            $written = $events;
-        });
+        $store
+            ->method('events')
+            ->willReturnCallback(static function (array $events) use (&$written): void {
+                $written = $events;
+            });
         $recorder = new Recorder($store, hide: ['credential']);
         $message = new Message('job-1', 'mail', 'Send', ['credential' => 'opaque-secret'], 2);
         $recorder->job(new JobRan($message, 0.02, new \RuntimeException('Call /reset/opaque-secret failed'), false));
@@ -68,9 +79,11 @@ final class RegressionTest extends TestCase
     {
         $written = [];
         $store = $this->createStub(Store::class);
-        $store->method('events')->willReturnCallback(static function (array $events) use (&$written): void {
-            $written = $events;
-        });
+        $store
+            ->method('events')
+            ->willReturnCallback(static function (array $events) use (&$written): void {
+                $written = $events;
+            });
         $app = new App(new Config(['clockwerk' => ['hide' => ['credential']], 'log' => ['path' => 'php://memory']]));
         $app->register(ClockwerkProvider::class);
         $app->container->instance(Store::class, $store);
@@ -119,18 +132,30 @@ final class RegressionTest extends TestCase
     {
         $queue = $this->queue();
         $queue->method('queues')->willReturn(['default', 'mail']);
-        $queue->expects(self::exactly(2))->method('jobs')->willReturnCallback(static function (string $name, string $asked, int $now, int $limit) use ($state, $by): array {
-            self::assertSame($state, $asked);
-            self::assertSame(100, $limit);
-            $jobs = [];
-            foreach (range(0, 99) as $i) {
-                $time = ($name === 'mail' ? 1000 : 1100) + $i;
-                $jobs[] = new Message($name . '-' . $i, $name, 'Send', ['api_key' => 'secret-value', 'label' => $name], 3,
-                    availableAt: $by === 'available_at' ? $time : 10_000 - $time,
-                    reservedAt: $by === 'reserved_at' ? $time : null);
-            }
-            return array_reverse($jobs);
-        });
+        $queue
+            ->expects(self::exactly(2))
+            ->method('jobs')
+            ->willReturnCallback(static function (string $name, string $asked, int $now, int $limit) use (
+                $state,
+                $by,
+            ): array {
+                self::assertSame($state, $asked);
+                self::assertSame(100, $limit);
+                $jobs = [];
+                foreach (range(0, 99) as $i) {
+                    $time = ($name === 'mail' ? 1000 : 1100) + $i;
+                    $jobs[] = new Message(
+                        $name . '-' . $i,
+                        $name,
+                        'Send',
+                        ['api_key' => 'secret-value', 'label' => $name],
+                        3,
+                        availableAt: $by === 'available_at' ? $time : 10_000 - $time,
+                        reservedAt: $by === 'reserved_at' ? $time : null,
+                    );
+                }
+                return array_reverse($jobs);
+            });
         $jobs = $this->dashboard($queue)->state(60, $state)['jobs'];
 
         self::assertSame($state, $jobs['list_state']);
@@ -156,9 +181,11 @@ final class RegressionTest extends TestCase
     {
         $before = null;
         $store = $this->createStub(Store::class);
-        $store->method('prune')->willReturnCallback(static function (int $cutoff) use (&$before): void {
-            $before = $cutoff;
-        });
+        $store
+            ->method('prune')
+            ->willReturnCallback(static function (int $cutoff) use (&$before): void {
+                $before = $cutoff;
+            });
         $app = new App(new Config(['clockwerk' => ['keep' => $configured], 'log' => ['path' => 'php://memory']]));
         $app->register(ClockwerkProvider::class);
         $app->container->instance(Store::class, $store);
@@ -171,8 +198,8 @@ final class RegressionTest extends TestCase
         }
 
         self::assertNotNull($before, 'No write pruned within the bounded number of opportunities.');
-        self::assertGreaterThanOrEqual($started - $hours * 3600, $before);
-        self::assertLessThanOrEqual(time() - $hours * 3600, $before);
+        self::assertGreaterThanOrEqual($started - ($hours * 3600), $before);
+        self::assertLessThanOrEqual(time() - ($hours * 3600), $before);
     }
 
     /**
@@ -186,14 +213,19 @@ final class RegressionTest extends TestCase
     }
 
     #[DataProvider('messageLimits')]
-    public function testASecretCrossingTheRecordedMessageLimitIsHiddenBeforeTruncation(string $surface, int $limit): void
-    {
+    public function testASecretCrossingTheRecordedMessageLimitIsHiddenBeforeTruncation(
+        string $surface,
+        int $limit,
+    ): void {
         $secret = 'UNIQUE-SECRET-END';
         $prefix = $surface === 'job' ? strlen('RuntimeException: ') : 0;
         $text = str_repeat('x', $limit - $prefix - 5) . $secret;
         if ($surface === 'failed') {
             $queue = $this->queue();
-            $queue->expects(self::once())->method('failed')->willReturn([new Message('failed', 'default', 'Send', ['api_key' => $secret], error: $text)]);
+            $queue
+                ->expects(self::once())
+                ->method('failed')
+                ->willReturn([new Message('failed', 'default', 'Send', ['api_key' => $secret], error: $text)]);
             $message = $this->dashboard($queue)->state()['jobs']['failed'][0]['error'];
         } else {
             $message = $this->recordedMessage($surface, $text, $secret);
@@ -206,13 +238,15 @@ final class RegressionTest extends TestCase
      * Records either error surface through its public entry point, then
      * reads the actual event passed to the store.
      */
-    private function recordedMessage(string $surface, string $text, string $secret): string
+    private function recordedMessage(string $surface, string $text, #[\SensitiveParameter] string $secret): string
     {
         $written = [];
         $store = $this->createStub(Store::class);
-        $store->method('events')->willReturnCallback(static function (array $events) use (&$written): void {
-            $written = $events;
-        });
+        $store
+            ->method('events')
+            ->willReturnCallback(static function (array $events) use (&$written): void {
+                $written = $events;
+            });
         $recorder = new Recorder($store, hide: ['token']);
         $error = new \RuntimeException($text);
         if ($surface === 'job') {
@@ -242,9 +276,13 @@ final class RegressionTest extends TestCase
         if ($queue !== null) {
             $container->instance(QueueStore::class, $queue);
         }
-        return new Dashboard($this->createStub(Store::class), new Config([
-            'clockwerk' => ['name' => 'Test', 'interval' => 5, 'hide' => ['api_key']],
-            'queue' => ['queue' => 'default'],
-        ]), $container);
+        return new Dashboard(
+            $this->createStub(Store::class),
+            new Config([
+                'clockwerk' => ['name' => 'Test', 'interval' => 5, 'hide' => ['api_key']],
+                'queue' => ['queue' => 'default'],
+            ]),
+            $container,
+        );
     }
 }

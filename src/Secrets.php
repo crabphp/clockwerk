@@ -22,7 +22,10 @@ final readonly class Secrets
      */
     public function __construct(array $words)
     {
-        $this->words = array_values(array_filter(array_map(static fn (mixed $word): string => strtolower((string) $word), $words), static fn (string $word): bool => $word !== ''));
+        $this->words = array_values(array_filter(
+            array_map(static fn(mixed $word): string => strtolower((string) $word), $words),
+            static fn(string $word): bool => $word !== '',
+        ));
     }
 
     /**
@@ -34,7 +37,11 @@ final readonly class Secrets
     public function hidden(array $data): array
     {
         foreach ($data as $name => $value) {
-            $data[$name] = $this->names((string) $name) ? '(hidden)' : (is_array($value) ? $this->hidden($value) : $value);
+            if ($this->names((string) $name)) {
+                $data[$name] = '(hidden)';
+            } elseif (is_array($value)) {
+                $data[$name] = $this->hidden($value);
+            }
         }
         return $data;
     }
@@ -52,8 +59,12 @@ final readonly class Secrets
             $text = str_replace([$value, rawurlencode($value)], '(hidden)', $text);
         }
         if ($this->words !== []) {
-            $names = implode('|', array_map(static fn (string $word): string => preg_quote($word, '~'), $this->words));
-            $text = (string) preg_replace('~([\w-]*(?:' . $names . ')[\w-]*)(=|:\s*|%3D)(?:Bearer\s+)?[^&\s"\'<>,;)]+~i', '$1$2(hidden)', $text);
+            $names = implode('|', array_map(static fn(string $word): string => preg_quote($word, '~'), $this->words));
+            $text = (string) preg_replace(
+                '~([\w-]*(?:' . $names . ')[\w-]*)(=|:\s*|%3D)(?:Bearer\s+)?[^&\s"\'<>,;)]+~i',
+                '$1$2(hidden)',
+                $text,
+            );
         }
         return $text;
     }
