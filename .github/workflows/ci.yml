@@ -28,7 +28,6 @@ jobs:
         with:
           repository: crabphp/framework
           path: framework
-          # Needed only while the crabphp repositories are private.
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
