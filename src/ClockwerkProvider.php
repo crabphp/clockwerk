@@ -59,17 +59,32 @@ final class ClockwerkProvider implements WorkerProvider
     public function register(Container $container): void
     {
         $config = $container->get(Config::class);
-        $config->defaults('clockwerk', [
-            'path' => '/clockwerk',
-            'token' => null,
-            'middleware' => [],
-            'name' => null,
-            'table' => 'clockwerk',
-            'database' => null,
-            'interval' => 5.0,
-            'keep' => 24,
-            'hide' => ['password', 'passwd', 'secret', 'token', 'api_key', 'apikey', 'authorization', 'cookie'],
-        ]);
+        $config->defaults(
+            'clockwerk',
+            [
+                'path' => '/clockwerk',
+                'token' => null,
+                'middleware' => [],
+                'name' => null,
+                'table' => 'clockwerk',
+                'database' => null,
+                'interval' => 5.0,
+                'keep' => 24,
+                'hide' => ['password', 'passwd', 'secret', 'token', 'api_key', 'apikey', 'authorization', 'cookie'],
+            ],
+            [
+                'path' => ['type' => 'string', 'pattern' => '^/', 'examples' => ['/clockwerk']],
+                'token' => ['type' => ['string', 'null'], 'minLength' => 1],
+                // Middleware around the page, by class name or as objects.
+                'middleware' => ['type' => 'array'],
+                'name' => ['type' => ['string', 'null']],
+                'table' => ['type' => 'string', 'minLength' => 1],
+                'database' => ['type' => ['string', 'null'], 'minLength' => 1],
+                'interval' => ['type' => 'number', 'minimum' => 1],
+                'keep' => ['type' => 'integer', 'minimum' => 1],
+                'hide' => ['type' => 'array', 'items' => ['type' => 'string', 'minLength' => 1]],
+            ],
+        );
         $container->singleton(Store::class, static function (Container $container): Store {
             if (!$container->has(Database::class)) {
                 throw new \LogicException(
@@ -77,6 +92,7 @@ final class ClockwerkProvider implements WorkerProvider
                 );
             }
             $config = $container->get(Config::class);
+            $config->check('clockwerk');
             $database = $container->get(Database::class);
             $name = $config->get('clockwerk.database');
             return new DatabaseStore(
