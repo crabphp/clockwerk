@@ -28,7 +28,7 @@ final class SettingsTest extends TestCase
         $app->register(ClockwerkProvider::class);
         self::assertSame(
             [
-                    'clockwerk.interval is 0.5; it takes a number, at least 1.',
+                'clockwerk.interval is 0.5; it takes a number, at least 1.',
                 'clockwerk.keep is "24h"; it takes a whole number, at least 1.',
             ],
             $app->config->problems(),
