@@ -7,8 +7,8 @@ namespace Crab\Clockwerk\Http;
 use Crab\Clockwerk\Recorder;
 use Crab\Clockwerk\RouteNames;
 use Crab\Contracts\Config\Config;
+use Crab\Contracts\Http\HttpError;
 use Crab\Contracts\Routing\Router;
-use Crab\Http\HttpException;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -49,7 +49,7 @@ final class RecordRequests implements MiddlewareInterface
         } catch (\Throwable $error) {
             $name = $this->name($request->getMethod(), $path);
             // An answer the action chose, such as a 404, is not a failure of the application.
-            $chosen = $error instanceof HttpException && $error->status < 500;
+            $chosen = $error instanceof HttpError && $error->status < 500;
             $this->recorder->measure('request', $name, (hrtime(true) - $started) / 1e6, !$chosen);
             if (!$chosen) {
                 $this->recorder->exception($error, $name);
