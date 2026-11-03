@@ -29,16 +29,11 @@ final readonly class InstallClockwerk implements Command
         $migrator = $this->migrators->migrator(is_string($database) && $database !== '' ? $database : null);
         $prefix = (string) $this->config->get('clockwerk.table');
         $name = "create_{$prefix}_tables";
-        foreach (array_keys($migrator->status()) as $existing) {
-            if (!str_ends_with($existing, $name)) {
-                continue;
-            }
-
-            $output->line("Your migrations already have {$existing}; nothing was written.");
+        [$file, $written] = $migrator->install($name, self::migration($prefix));
+        if (!$written) {
+            $output->line("Your migrations already have {$file}; nothing was written.");
             return 0;
         }
-        $file = $migrator->make($name);
-        file_put_contents($file, self::migration($prefix));
         $output->line("Created {$file}");
         $output->line('Run `migrate` to create the tables.');
         return 0;
