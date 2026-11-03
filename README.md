@@ -16,13 +16,13 @@ Add the dashboard plugin after the queue and schedule plugins, if you use them, 
 
 ```php
 // app.php
-use App\Plugins\AppPlugin;
+use App\Setup;
 use Crab\Clockwerk\ClockwerkPlugin;
 
 ->withPlugins([
     ClockwerkPlugin::class,
-    AppPlugin::class,
 ])
+->withSetup(Setup::class)
 ```
 
 Create its tables, and say who may open it:
