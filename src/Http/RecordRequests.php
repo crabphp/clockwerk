@@ -67,7 +67,7 @@ final class RecordRequests implements MiddlewareInterface
 
     private function name(string $method, string $path): string
     {
-        // Read on the first request: by then every provider has added its routes.
+        // Read on the first request: by then every plugin has added its routes.
         $this->routes ??= new RouteNames($this->router);
         return $method . ' ' . ($this->routes->of($method, $path === '' ? '/' : $path) ?? '(no route)');
     }

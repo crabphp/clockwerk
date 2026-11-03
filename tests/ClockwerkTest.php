@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Crab\Clockwerk\Tests;
 
 use Crab\App;
-use Crab\Cache\CacheProvider;
-use Crab\Clockwerk\ClockwerkProvider;
+use Crab\Cache\CachePlugin;
+use Crab\Clockwerk\ClockwerkPlugin;
 use Crab\Clockwerk\Dashboard;
 use Crab\Clockwerk\Recorder;
 use Crab\Clockwerk\RouteNames;
@@ -16,14 +16,14 @@ use Crab\Config\Config;
 use Crab\Console\Output;
 use Crab\Contracts\Queue\Queue;
 use Crab\Contracts\Schedule\Schedule;
-use Crab\Database\DatabaseProvider;
-use Crab\Events\EventsProvider;
+use Crab\Database\DatabasePlugin;
+use Crab\Events\EventsPlugin;
 use Crab\Http\HttpException;
 use Crab\Http\Request;
 use Crab\Http\Response;
-use Crab\Queue\QueueProvider;
+use Crab\Queue\QueuePlugin;
 use Crab\Routing\Router;
-use Crab\Schedule\ScheduleProvider;
+use Crab\Schedule\SchedulePlugin;
 use Crab\Schedule\Scheduler;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
@@ -557,7 +557,7 @@ final class ClockwerkTest extends TestCase
                 ],
             ],
         ]));
-        $app->register(DatabaseProvider::class, ClockwerkProvider::class);
+        $app->register(DatabasePlugin::class, ClockwerkPlugin::class);
         $app->router->get('/ping', static fn(): array => ['pong' => true]);
 
         // The migration is written among that database's, and run with them.
@@ -855,12 +855,12 @@ final class ClockwerkTest extends TestCase
             ],
         ]));
         $app->register(
-            DatabaseProvider::class,
-            EventsProvider::class,
-            CacheProvider::class,
-            QueueProvider::class,
-            ScheduleProvider::class,
-            ClockwerkProvider::class,
+            DatabasePlugin::class,
+            EventsPlugin::class,
+            CachePlugin::class,
+            QueuePlugin::class,
+            SchedulePlugin::class,
+            ClockwerkPlugin::class,
         );
         foreach (['queue:install', 'clockwerk:install', 'clockwerk:install', 'migrate'] as $command) {
             self::assertSame(0, $app->console->run([$command], $this->quiet()));

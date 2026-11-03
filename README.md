@@ -12,16 +12,16 @@ Use it to answer, without opening a terminal: is everything up, what is slow, wh
 composer require crabphp/clockwerk
 ```
 
-The framework providers are registered by default. Add the dashboard provider before your own:
+Add the dashboard plugin after the queue and schedule plugins, if you use them, so it records their jobs and tasks, and before your own:
 
 ```php
 // app.php
-use App\Providers\AppProvider;
-use Crab\Clockwerk\ClockwerkProvider;
+use App\Plugins\AppPlugin;
+use Crab\Clockwerk\ClockwerkPlugin;
 
-->withProviders([
-    ClockwerkProvider::class,
-    AppProvider::class,
+->withPlugins([
+    ClockwerkPlugin::class,
+    AppPlugin::class,
 ])
 ```
 
@@ -121,7 +121,7 @@ Retrying and forgetting jobs is accepted only from the dashboard's own page: a r
 - **Failed jobs:** the latest 200 are listed, with the fields named in `clockwerk.hide` left out. Their exception traces carry no arguments.
 - **When the database is down** the counts of that time are lost, not kept: a worker never holds more than the current minute in memory.
 - **A worker that is killed** takes its last few seconds of counts with it, and leaves the list within three intervals.
-- **Jobs and tasks use the default events provider**, which is registered before the queue and schedule. Requests are always recorded.
+- **Jobs and tasks use the default events plugin**, which is registered before the queue and schedule. Requests are always recorded.
 - **The page is one file** with its styles and script inside it. It loads nothing from anywhere else.
 
 ## How it is built
@@ -130,7 +130,7 @@ Retrying and forgetting jobs is accepted only from the dashboard's own page: a r
 - The framework's `JobRan` and `TaskRan` events feed jobs and tasks to the same `Recorder`.
 - `Recorder` counts in memory, one per worker, and a timer of the worker writes to the `Store`.
 - `Dashboard` adds the workers' counts up and puts them beside what the queue and the schedule say of themselves now.
-- `Store` is an interface with one implementation, `DatabaseStore`. To keep the numbers elsewhere, implement it and bind it after the provider.
+- `Store` is an interface with one implementation, `DatabaseStore`. To keep the numbers elsewhere, implement it and bind it after the plugin.
 
 ## Tests
 

@@ -24,14 +24,14 @@ use Crab\Contracts\Queue\JobRan;
 use Crab\Contracts\Queue\Store as QueueStore;
 use Crab\Contracts\Routing\Router;
 use Crab\Contracts\Schedule\TaskRan;
-use Crab\Contracts\WorkerProvider;
+use Crab\Contracts\WorkerPlugin;
 use Crab\Engine\Process\Worker;
 use Psr\Log\LoggerInterface;
 
 /**
  * Adds the dashboard: the page at "clockwerk.path", the recording behind it,
  * and the `clockwerk:install` and `clockwerk:status` commands. Register it after
- * the database, events, queue and schedule providers, and before the
+ * the database, events, queue and schedule plugins, and before the
  * application's own:
  *
  *     path         where the dashboard is; "/clockwerk"
@@ -44,10 +44,10 @@ use Psr\Log\LoggerInterface;
  *     keep         hours what was recorded is kept; 24
  *     hide         a failed job's fields whose names contain one of these words are shown as "(hidden)"
  *
- * Jobs and scheduled tasks are recorded when EventsProvider is
+ * Jobs and scheduled tasks are recorded when EventsPlugin is
  * registered; requests always are.
  */
-final class ClockwerkProvider implements WorkerProvider
+final class ClockwerkPlugin implements WorkerPlugin
 {
     /**
      * The timer that writes this worker's counts.
@@ -88,7 +88,7 @@ final class ClockwerkProvider implements WorkerProvider
         $container->singleton(Store::class, static function (Container $container): Store {
             if (!$container->has(Database::class)) {
                 throw new \LogicException(
-                    'The dashboard keeps what it records in the database: register the database provider, DatabaseProvider, before ClockwerkProvider.',
+                    'The dashboard keeps what it records in the database: register the database plugin, DatabasePlugin, before ClockwerkPlugin.',
                 );
             }
             $config = $container->get(Config::class);

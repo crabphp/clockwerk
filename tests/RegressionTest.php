@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Crab\Clockwerk\Tests;
 
 use Crab\App;
-use Crab\Clockwerk\ClockwerkProvider;
+use Crab\Clockwerk\ClockwerkPlugin;
 use Crab\Clockwerk\Dashboard;
 use Crab\Clockwerk\Recorder;
 use Crab\Clockwerk\Secrets;
@@ -75,7 +75,7 @@ final class RegressionTest extends TestCase
         self::assertStringNotContainsString('opaque-secret', json_encode($written, JSON_THROW_ON_ERROR));
     }
 
-    public function testTheProviderPassesCustomSecretWordsToTheRecorder(): void
+    public function testThePluginPassesCustomSecretWordsToTheRecorder(): void
     {
         $written = [];
         $store = $this->createStub(Store::class);
@@ -85,7 +85,7 @@ final class RegressionTest extends TestCase
                 $written = $events;
             });
         $app = new App(new Config(['clockwerk' => ['hide' => ['credential']], 'log' => ['path' => 'php://memory']]));
-        $app->register(ClockwerkProvider::class);
+        $app->register(ClockwerkPlugin::class);
         $app->container->instance(Store::class, $store);
         $recorder = $app->container->get(Recorder::class);
         $recorder->exception(new \RuntimeException('credential=custom-secret'), 'request');
@@ -187,7 +187,7 @@ final class RegressionTest extends TestCase
                 $before = $cutoff;
             });
         $app = new App(new Config(['clockwerk' => ['keep' => $configured], 'log' => ['path' => 'php://memory']]));
-        $app->register(ClockwerkProvider::class);
+        $app->register(ClockwerkPlugin::class);
         $app->container->instance(Store::class, $store);
         $recorder = $app->container->get(Recorder::class);
         $started = time();

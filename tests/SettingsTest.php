@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Crab\Clockwerk\Tests;
 
 use Crab\App;
-use Crab\Clockwerk\ClockwerkProvider;
+use Crab\Clockwerk\ClockwerkPlugin;
 use Crab\Config\Config;
 use PHPUnit\Framework\TestCase;
 
@@ -17,7 +17,7 @@ final class SettingsTest extends TestCase
     public function testTheDefaultsFitAndAWrongSettingIsNamedWithWhatItTakes(): void
     {
         $app = new App(new Config());
-        $app->register(ClockwerkProvider::class);
+        $app->register(ClockwerkPlugin::class);
         self::assertSame([], $app->config->problems());
 
         $app = new App(new Config(['clockwerk' => [
@@ -25,7 +25,7 @@ final class SettingsTest extends TestCase
             'interval' => 0.5,
             'keep' => '24h',
         ]]));
-        $app->register(ClockwerkProvider::class);
+        $app->register(ClockwerkPlugin::class);
         self::assertSame(
             [
                 'clockwerk.interval is 0.5; it takes a number, at least 1.',
