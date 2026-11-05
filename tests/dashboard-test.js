@@ -215,7 +215,7 @@ async function run() {
         dashboard.ui.queueTab = argument;
         dashboard.ui.state = s;
         let markup = dashboard.queue(s);
-        assert.match(markup, new RegExp({ pending: 'Waiting', processing: 'Running', delayed: 'Due in' }[argument]));
+        assert.match(markup, new RegExp({ pending: 'Waiting', processing: 'Reservation age', delayed: 'Due in' }[argument]));
         assert.match(markup, />2m<\/td>/);
         assert.match(markup, /first 30 of 150/);
         assert.match(markup, /Show 5 more/);

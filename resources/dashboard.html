@@ -488,7 +488,7 @@ function queue(s) {
         const state = ui.queueTab;
         const [heading, time] = {
             pending: ['Waiting', (job) => job.available_at ? span(s.now - job.available_at) : '–'],
-            processing: ['Running', (job) => job.reserved_at ? span(s.now - job.reserved_at) : '–'],
+            processing: ['Reservation age', (job) => job.reserved_at ? span(s.now - job.reserved_at) : '–'],
             delayed: ['Due in', (job) => job.available_at ? span(job.available_at - s.now) : '–'],
         }[state];
         // The list arrives with the answer after the tab is opened.
@@ -589,7 +589,7 @@ function exceptionRows(s, list, prefix) {
     return `<div class="table-wrap"><table><tbody>${list.map((e) => {
         const d = e.detail || {}, key = prefix + e.at + ':' + (d.class || '') + ':' + (d.during || '') + ':' + String(d.message ?? e.title).slice(0, 60), open = ui.open.has(key);
         return `<tr class="row expandable" data-open="${esc(key)}"><td class="name"><span class="bad-text mono">${esc(short(d.class || 'Error'))}</span> <span>${esc((d.message ?? e.title).slice(0, 160))}</span><div class="muted" style="font-size:12.5px">${esc(d.during || '')}</div></td><td class="r muted num">${ago(e.at, s.now)}</td></tr>`
-            + (open ? `<tr class="detail"><td colspan="2"><dl class="kv"><dt>Exception</dt><dd class="mono">${esc(d.class)}</dd><dt>Message</dt><dd>${esc(d.message)}</dd><dt>Thrown at</dt><dd class="mono">${esc(d.file)}:${esc(d.line)}</dd><dt>During</dt><dd>${esc(d.during)}</dd><dt>When</dt><dd>${stamp(e.at)}</dd></dl><pre>${(d.trace || []).map((line, n) => `<b>#${n}</b> ${esc(line)}`).join('\n')}</pre></td></tr>` : '');
+            + (open ? `<tr class="detail"><td colspan="2"><dl class="kv"><dt>Exception</dt><dd class="mono">${esc(d.class)}</dd><dt>Message</dt><dd>${esc(d.message)}</dd><dt>Thrown at</dt><dd class="mono">${esc(d.file)}:${esc(d.line)}</dd><dt>During</dt><dd>${esc(d.during)}</dd><dt>When</dt><dd>${stamp(e.at)}</dd></dl><pre>${(d.trace || []).map(esc).join('\n')}</pre></td></tr>` : '');
     }).join('')}</tbody></table></div>`;
 }
 

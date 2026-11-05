@@ -6,6 +6,7 @@ namespace Crab\Clockwerk;
 
 use Crab\Contracts\Queue\JobRan;
 use Crab\Contracts\Schedule\TaskRan;
+use Crab\Engine\FailureReporter;
 use Psr\Clock\ClockInterface;
 
 /**
@@ -109,15 +110,8 @@ final class Recorder
             return;
         }
         $trace = [];
-        foreach (array_slice($error->getTrace(), 0, 12) as $frame) {
-            $trace[] = mb_strcut(
-                (isset($frame['class']) ? $frame['class'] . ($frame['type'] ?? '::') : '')
-                . $frame['function']
-                . '()'
-                . (isset($frame['file']) ? ' at ' . $frame['file'] . ':' . ($frame['line'] ?? 0) : ''),
-                0,
-                400,
-            );
+        foreach (array_slice(FailureReporter::frames($error), 0, 12) as $frame) {
+            $trace[] = mb_strcut($frame, 0, 400);
         }
         // Cut to what a text column holds with room to spare: one huge message must not cost the others their place.
         $message = mb_strcut($this->secrets->scrubbed($error->getMessage(), $data), 0, 4000);
