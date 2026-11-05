@@ -23,23 +23,30 @@ use Psr\Http\Server\RequestHandlerInterface;
 final class RecordRequests implements MiddlewareInterface
 {
     private ?RouteNames $routes = null;
-    private readonly string $own;
+    /**
+     * @var array<string, true>
+     */
+    private readonly array $own;
 
     public function __construct(
         private readonly Recorder $recorder,
         private readonly Router $router,
         Config $config,
     ) {
-        $this->own = rtrim((string) $config->get('clockwerk.path'), '/');
+        $path = rtrim((string) $config->get('clockwerk.path'), '/');
+        $this->own = array_fill_keys([
+            $path === '' ? '/' : $path,
+            $path . '/api',
+            $path . '/api/jobs/retry',
+            $path . '/api/jobs/forget',
+        ], true);
     }
 
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
-        $path = $request->getUri()->getPath();
-        // Its own page and what the page asks for. Mounted at the root, that is "/" and "/api", not every path.
-        $own = $this->own === ''
-            ? in_array($path, ['', '/', '/api'], true) || str_starts_with($path, '/api/')
-            : $path === $this->own || str_starts_with($path, $this->own . '/');
+        $path = $request->getUri()->getPath() ?: '/';
+        // Only its own endpoints: an application may have /api/users beside a dashboard at /.
+        $own = isset($this->own[$path]) || str_contains($path, '%') && isset($this->own[rawurldecode($path)]);
         if ($own) {
             return $handler->handle($request);
         }
@@ -69,6 +76,18 @@ final class RecordRequests implements MiddlewareInterface
     {
         // Read on the first request: by then every plugin has added its routes.
         $this->routes ??= new RouteNames($this->router);
-        return $method . ' ' . ($this->routes->of($method, $path === '' ? '/' : $path) ?? '(no route)');
+        $pattern = $this->routes->of($method, $path === '' ? '/' : $path);
+        // HTTP permits extension methods: an attacker can invent one on every request.
+        if (
+            $pattern === null
+            && !in_array(
+                $method,
+                ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'CONNECT', 'TRACE'],
+                true,
+            )
+        ) {
+            $method = 'OTHER';
+        }
+        return $method . ' ' . ($pattern ?? '(no route)');
     }
 }
