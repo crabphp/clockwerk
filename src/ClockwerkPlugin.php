@@ -26,6 +26,7 @@ use Crab\Contracts\Routing\Router;
 use Crab\Contracts\Schedule\TaskRan;
 use Crab\Contracts\WorkerPlugin;
 use Crab\Engine\Process\Worker;
+use Psr\Clock\ClockInterface;
 
 /**
  * Adds the dashboard: the page at "clockwerk.path", the recording behind it,
@@ -99,12 +100,18 @@ final class ClockwerkPlugin implements WorkerPlugin
                 $container->get(Store::class),
                 (int) $config->get('clockwerk.keep'),
                 (array) $config->get('clockwerk.hide'),
+                $container->has(ClockInterface::class) ? $container->get(ClockInterface::class) : null,
             );
         });
         $container->singleton(Dashboard::class, static function (Container $container): Dashboard {
             $config = $container->get(Config::class);
             $config->check('clockwerk');
-            return new Dashboard($container->get(Store::class), $config, $container);
+            return new Dashboard(
+                $container->get(Store::class),
+                $config,
+                $container,
+                $container->has(ClockInterface::class) ? $container->get(ClockInterface::class) : null,
+            );
         });
 
         $container->singleton(Recording::class, Recording::class);

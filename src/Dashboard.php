@@ -7,6 +7,7 @@ namespace Crab\Clockwerk;
 use Crab\Contracts\Config\Config;
 use Crab\Contracts\Queue\Store as QueueStore;
 use Crab\Contracts\Schedule\Schedule;
+use Psr\Clock\ClockInterface;
 use Psr\Container\ContainerInterface;
 
 /**
@@ -32,6 +33,7 @@ final readonly class Dashboard
         private Store $store,
         private Config $config,
         private ContainerInterface $container,
+        private ?ClockInterface $clock = null,
     ) {
         $this->secrets = new Secrets((array) $config->get('clockwerk.hide'));
     }
@@ -44,7 +46,7 @@ final readonly class Dashboard
     public function state(int $minutes = 60, string $list = ''): array
     {
         $minutes = max(5, min($minutes, 24 * 60));
-        $now = time();
+        $now = $this->clock?->now()->getTimestamp() ?? time();
         $since = (intdiv($now, 60) * 60) - (($minutes - 1) * 60);
         $interval = (float) $this->config->get('clockwerk.interval');
         return [
@@ -121,7 +123,9 @@ final readonly class Dashboard
         $store = $this->container->get(QueueStore::class);
         $names = [(string) $this->config->get('queue.queue', 'default') => true];
         $supervisors = [];
-        foreach ((array) $this->config->get('queue.supervisors', []) as $name => $settings) {
+        $declared = (array) $this->config->get('queue.supervisors', []);
+        // Without named supervisors the framework runs one group from queue's own settings.
+        foreach ($declared === [] ? ['queue' => []] : $declared as $name => $settings) {
             // One that names no queue takes from the queue's own, as the framework has it.
             $queues = array_values(array_map(
                 strval(...),
@@ -255,16 +259,30 @@ final readonly class Dashboard
             $ran[$row['name']] = $row;
         }
         $zone = $this->config->get('schedule.timezone');
-        $now = new \DateTimeImmutable('now', is_string($zone) && $zone !== '' ? new \DateTimeZone($zone) : null);
+        $now = $this->clock?->now() ?? new \DateTimeImmutable();
+        $now = $now->setTimezone(
+            new \DateTimeZone(is_string($zone) && $zone !== '' ? $zone : date_default_timezone_get()),
+        );
         $rows = [];
         foreach ($this->container->get(Schedule::class)->tasks() as $task) {
             $name = $task->named();
             $row = $ran[$name] ?? null;
+            $next = null;
+            $nextError = null;
+            if ($task->interval() === null) {
+                try {
+                    $next = $task->next($now)->getTimestamp();
+                } catch (\LogicException $error) {
+                    $nextError = $error->getMessage();
+                }
+            }
             $rows[] = [
                 'name' => $name,
                 'when' => $task->expression(),
                 'one_server' => $task->runsOnOneServer(),
-                'next' => $task->interval() === null ? $task->next($now)->getTimestamp() : null,
+                'without_overlapping' => $task->preventsOverlaps(),
+                'next' => $next,
+                'next_error' => $nextError,
                 'runs' => $row['runs'] ?? 0,
                 'errors' => $row['errors'] ?? 0,
                 'avg_ms' => $row !== null && $row['runs'] > 0 ? round($row['total_ms'] / $row['runs'], 2) : 0.0,

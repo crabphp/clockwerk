@@ -6,6 +6,7 @@ namespace Crab\Clockwerk;
 
 use Crab\Contracts\Queue\JobRan;
 use Crab\Contracts\Schedule\TaskRan;
+use Psr\Clock\ClockInterface;
 
 /**
  * Counts what one worker does, in memory, and writes the counts to the
@@ -53,6 +54,7 @@ final class Recorder
         private readonly Store $store,
         private readonly int $keep = 24,
         array $hide = [],
+        private readonly ?ClockInterface $clock = null,
     ) {
         $this->secrets = new Secrets($hide);
     }
@@ -74,7 +76,7 @@ final class Recorder
      */
     private function count(string $kind, string $name, float $milliseconds, bool $failed): void
     {
-        $bucket = intdiv(time(), 60) * 60;
+        $bucket = intdiv($this->now(), 60) * 60;
         $name = mb_substr($name, 0, 160);
         $key = "{$kind}\0{$name}\0{$bucket}";
         $metric = $this->metrics[$key] ?? [
@@ -121,7 +123,7 @@ final class Recorder
         $message = mb_strcut($this->secrets->scrubbed($error->getMessage(), $data), 0, 4000);
         $this->events[] = [
             'kind' => 'exception',
-            'at' => time(),
+            'at' => $this->now(),
             'title' => $error::class . ': ' . mb_strcut($message, 0, 200),
             'detail' => [
                 'class' => $error::class,
@@ -152,7 +154,7 @@ final class Recorder
         // is shown is what has just happened. The counts above still tell all.
         $this->recent[] = [
             'kind' => 'job',
-            'at' => time(),
+            'at' => $this->now(),
             'title' => $event->message->job,
             'detail' => [
                 'id' => (string) $event->message->id,
@@ -230,7 +232,7 @@ final class Recorder
         $this->changed = [];
         $this->events = [];
         $this->recent = [];
-        $current = intdiv(time(), 60) * 60;
+        $current = intdiv($this->now(), 60) * 60;
         foreach ($this->metrics as $key => $metric) {
             if ($metric['bucket'] >= $current) {
                 continue;
@@ -242,7 +244,12 @@ final class Recorder
         $this->store->events($events);
         // Now and then, and not by every worker at once.
         if ((++$this->flushes % 120) === 1 && random_int(1, 4) === 1) {
-            $this->store->prune(time() - ($this->keep * 3600));
+            $this->store->prune($this->now() - ($this->keep * 3600));
         }
+    }
+
+    private function now(): int
+    {
+        return $this->clock?->now()->getTimestamp() ?? time();
     }
 }

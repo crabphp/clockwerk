@@ -7,6 +7,7 @@ namespace Crab\Clockwerk\Http;
 use Crab\Contracts\Queue\Store;
 use Crab\Validation\Data;
 use Crab\Validation\Fields;
+use Psr\Clock\ClockInterface;
 
 /**
  * Puts a failed job back to wait as if new; every failed job when the id
@@ -16,6 +17,7 @@ final readonly class RetryJob
 {
     public function __construct(
         private Store $store,
+        private ?ClockInterface $clock = null,
     ) {}
 
     /**
@@ -25,6 +27,9 @@ final readonly class RetryJob
     {
         $id = $job->id;
 
-        return ['retried' => $this->store->retry($id === 'all' ? null : $id, time())];
+        return ['retried' => $this->store->retry(
+            $id === 'all' ? null : $id,
+            $this->clock?->now()->getTimestamp() ?? time(),
+        )];
     }
 }

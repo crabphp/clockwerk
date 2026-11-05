@@ -8,6 +8,7 @@ use Crab\Contracts\Config\Config;
 use Crab\Contracts\Container\Container;
 use Crab\Engine\Async\Task;
 use Crab\Engine\Process\Worker;
+use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -26,12 +27,13 @@ final class Recording
     public function start(Worker $worker, Container $container): void
     {
         $this->complained = false;
-        $started = time();
+        $clock = $container->has(ClockInterface::class) ? $container->get(ClockInterface::class) : null;
+        $started = $clock?->now()->getTimestamp() ?? time();
         $stats = $worker->stats();
         // With something of its own at the end: a process that takes over a host's name and a
         // process id within the minute must not write over what the one before it counted.
         $this->worker = substr((string) gethostname(), 0, 36) . ':' . $stats['pid'] . ':' . bin2hex(random_bytes(3));
-        $write = function () use ($worker, $container, $started): void {
+        $write = function () use ($worker, $container, $started, $clock): void {
             $recorder = $container->get(Recorder::class);
             $failure = null;
             // The counts first, and whatever comes of it: the recorder lets go of what it has
@@ -49,7 +51,7 @@ final class Recording
                     'pid' => (int) $stats['pid'],
                     'host' => substr((string) gethostname(), 0, 120),
                     'started_at' => $started,
-                    'seen_at' => time(),
+                    'seen_at' => $clock?->now()->getTimestamp() ?? time(),
                     'memory' => (int) $stats['memoryBytes'],
                     'handled' => $recorder->handled(),
                 ]);
