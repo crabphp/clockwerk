@@ -53,6 +53,12 @@ final class RouteNames
         if (isset($this->static[$method][$path])) {
             return $path;
         }
+        if (str_contains($path, '%')) {
+            $decoded = rawurldecode($path);
+            if (isset($this->static[$method][$decoded])) {
+                return $decoded;
+            }
+        }
         if (array_key_exists($path, $this->seen[$method] ?? [])) {
             return $this->seen[$method][$path];
         }
