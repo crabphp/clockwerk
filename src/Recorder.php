@@ -41,6 +41,7 @@ final class Recorder
      */
     private array $recent = [];
     private int $flushes = 0;
+    private bool $flushing = false;
 
     private readonly Secrets $secrets;
 
@@ -204,6 +205,21 @@ final class Recorder
      * that can no longer change.
      */
     public function flush(string $worker): void
+    {
+        // A store may suspend. A later snapshot must never reach it before the older one.
+        // Leave new counts and events pending for the next write instead of consuming them.
+        if ($this->flushing) {
+            return;
+        }
+        $this->flushing = true;
+        try {
+            $this->write($worker);
+        } finally {
+            $this->flushing = false;
+        }
+    }
+
+    private function write(string $worker): void
     {
         $rows = [];
         foreach (array_keys($this->changed) as $key) {
