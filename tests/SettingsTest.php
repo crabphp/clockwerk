@@ -10,6 +10,7 @@ use Crab\Clockwerk\Recorder;
 use Crab\Clockwerk\Store;
 use Crab\Config\Config;
 use Crab\Contracts\Config\InvalidSettings;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -17,6 +18,38 @@ use PHPUnit\Framework\TestCase;
  */
 final class SettingsTest extends TestCase
 {
+    /**
+     * @return iterable<string, array{string, mixed}>
+     */
+    public static function invalidSettings(): iterable
+    {
+        foreach ([
+            'path' => 'clockwerk',
+            'token' => '',
+            'middleware' => 'AdminsOnly',
+            'name' => false,
+            'table' => "invalid'prefix",
+            'database' => '',
+            'interval' => INF,
+            'keep' => 0,
+            'hide' => [''],
+        ] as $name => $value) {
+            yield $name => [$name, $value];
+        }
+    }
+
+    #[DataProvider('invalidSettings')]
+    public function testEverySettingRejectsAnInvalidValue(string $name, mixed $value): void
+    {
+        $app = new App(new Config());
+        $app->register(ClockwerkPlugin::class);
+        $config = new Config(['clockwerk' => [$name => $value]]);
+        $config->defaults('clockwerk', $app->config->get('clockwerk'), $app->config->rules()['clockwerk']);
+
+        self::assertCount(1, $config->problems('clockwerk'));
+        self::assertStringStartsWith('clockwerk.' . $name, $config->problems('clockwerk')[0]);
+    }
+
     public function testReplacingTheStoreDoesNotBypassTheRecordersSettings(): void
     {
         $app = new App(new Config(['clockwerk' => ['keep' => 0]]));
