@@ -173,7 +173,7 @@ final class RegressionTest extends TestCase
     public static function retentionHours(): iterable
     {
         yield 'configured hours' => [7, 7];
-        yield 'minimum one hour' => [0, 1];
+        yield 'minimum one hour' => [1, 1];
     }
 
     #[DataProvider('retentionHours')]

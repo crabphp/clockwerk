@@ -20,13 +20,20 @@ final readonly class Status implements Command
         return <<<'TEXT'
             Show how the application is running: what the dashboard shows, in short
             Options:
-              --minutes=60   How far back to count
+              --minutes=60   How far back to count, from 5 to 1440 minutes
             TEXT;
     }
 
     public function handle(Input $input, Output $output): int
     {
-        $state = $this->dashboard->state((int) $input->option('minutes', '60'));
+        $minutes = $input->value('minutes', '60') ?? '60';
+        if (preg_match('/^[1-9][0-9]*$/D', $minutes) !== 1 || filter_var($minutes, FILTER_VALIDATE_INT, ['options' => [
+            'min_range' => 5,
+            'max_range' => 1440,
+        ]]) === false) {
+            throw new \InvalidArgumentException('--minutes takes a whole number from 5 to 1440; use --minutes=60.');
+        }
+        $state = $this->dashboard->state((int) $minutes);
         $groups = [];
         foreach ($state['workers'] as $worker) {
             $groups[$worker['group_name']] = ($groups[$worker['group_name']] ?? 0) + 1;

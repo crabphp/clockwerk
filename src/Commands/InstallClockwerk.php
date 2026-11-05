@@ -24,6 +24,7 @@ final readonly class InstallClockwerk implements Command
 
     public function handle(Input $input, Output $output): int
     {
+        $this->config->check('clockwerk');
         // Into the migrations of the database the table is kept in, which need not be the default one.
         $database = $this->config->get('clockwerk.database');
         $migrator = $this->migrators->migrator(is_string($database) && $database !== '' ? $database : null);

@@ -70,7 +70,7 @@ final class ClockwerkPlugin implements WorkerPlugin
                 // Middleware around the page, by class name or as objects.
                 'middleware' => ['type' => 'array'],
                 'name' => ['type' => ['string', 'null']],
-                'table' => ['type' => 'string', 'minLength' => 1],
+                'table' => ['type' => 'string', 'pattern' => '^[A-Za-z_][A-Za-z0-9_]*\z', 'examples' => ['clockwerk']],
                 'database' => ['type' => ['string', 'null'], 'minLength' => 1],
                 'interval' => ['type' => 'number', 'minimum' => 1],
                 'keep' => ['type' => 'integer', 'minimum' => 1],
@@ -92,22 +92,20 @@ final class ClockwerkPlugin implements WorkerPlugin
                 (string) $config->get('clockwerk.table'),
             );
         });
-        $container->singleton(
-            Recorder::class,
-            static fn(Container $container): Recorder => new Recorder(
+        $container->singleton(Recorder::class, static function (Container $container): Recorder {
+            $config = $container->get(Config::class);
+            $config->check('clockwerk');
+            return new Recorder(
                 $container->get(Store::class),
-                max(1, (int) $container->get(Config::class)->get('clockwerk.keep')),
-                (array) $container->get(Config::class)->get('clockwerk.hide'),
-            ),
-        );
-        $container->singleton(
-            Dashboard::class,
-            static fn(Container $container): Dashboard => new Dashboard(
-                $container->get(Store::class),
-                $container->get(Config::class),
-                $container,
-            ),
-        );
+                (int) $config->get('clockwerk.keep'),
+                (array) $config->get('clockwerk.hide'),
+            );
+        });
+        $container->singleton(Dashboard::class, static function (Container $container): Dashboard {
+            $config = $container->get(Config::class);
+            $config->check('clockwerk');
+            return new Dashboard($container->get(Store::class), $config, $container);
+        });
 
         $container->singleton(Recording::class, Recording::class);
 
