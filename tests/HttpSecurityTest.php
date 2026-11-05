@@ -18,6 +18,33 @@ use Psr\Http\Server\RequestHandlerInterface;
 
 final class HttpSecurityTest extends TestCase
 {
+    public function testThePageCannotBeFramedOrSendItsBootstrapTokenInAReferrer(): void
+    {
+        $response = $this->app()->handle(new Request('GET', '/clockwerk?token=secret'));
+        self::assertSame(200, $response->getStatusCode());
+        self::assertSame('DENY', $response->getHeaderLine('X-Frame-Options'));
+        self::assertSame("frame-ancestors 'none'", $response->getHeaderLine('Content-Security-Policy'));
+        self::assertSame('no-referrer', $response->getHeaderLine('Referrer-Policy'));
+    }
+
+    public function testActionsRequireAStringIdFromTheJsonBodyAndPost(): void
+    {
+        $app = $this->app();
+        $queue = $this->createMock(QueueStore::class);
+        $queue->expects(self::never())->method('retry');
+        $queue->expects(self::never())->method('forget');
+        $app->container->instance(QueueStore::class, $queue);
+        $headers = ['Authorization' => 'Bearer secret', 'Content-Type' => 'application/json'];
+        foreach (['retry', 'forget'] as $action) {
+            $path = '/clockwerk/api/jobs/' . $action . '?id=all';
+            foreach (['{}', '{"id":null}', '{"id":1}', '{"id":true}', '{"id":[]}'] as $body) {
+                self::assertSame(422, $app->handle(new Request('POST', $path, $headers, $body))->getStatusCode());
+            }
+            self::assertSame(400, $app->handle(new Request('POST', $path, $headers, '{'))->getStatusCode());
+            self::assertSame(405, $app->handle(new Request('GET', $path, $headers))->getStatusCode());
+        }
+    }
+
     /**
      * @return iterable<string, array{string, string}>
      */

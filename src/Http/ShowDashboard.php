@@ -17,6 +17,11 @@ final class ShowDashboard
     public function handle(): Response
     {
         $this->page ??= (string) file_get_contents(dirname(__DIR__, 2) . '/resources/dashboard.html');
-        return Response::html($this->page, headers: ['Cache-Control' => 'no-store']);
+        return Response::html($this->page, headers: [
+            'Cache-Control' => 'no-store',
+            'Content-Security-Policy' => "frame-ancestors 'none'",
+            'X-Frame-Options' => 'DENY',
+            'Referrer-Policy' => 'no-referrer',
+        ]);
     }
 }
