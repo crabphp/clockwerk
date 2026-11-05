@@ -55,9 +55,14 @@ final readonly class Secrets
      */
     public function scrubbed(string $text, array $data = []): string
     {
+        $replacements = [];
         foreach ($this->values($data) as $value) {
-            $text = str_replace([$value, rawurlencode($value)], '(hidden)', $text);
+            foreach ([$value, rawurlencode($value), urlencode($value)] as $form) {
+                $replacements[$form] = '(hidden)';
+            }
         }
+        // strtr takes the longest match first and never replaces its own replacement text.
+        $text = strtr($text, $replacements);
         if ($this->words !== []) {
             $names = implode('|', array_map(static fn(string $word): string => preg_quote($word, '~'), $this->words));
             $text = (string) preg_replace(
