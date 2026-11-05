@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Crab\Clockwerk\Http;
 
 use Crab\Contracts\Config\Config;
-use Crab\Http\Response;
+use Crab\Http\ErrorResponse;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -32,9 +32,11 @@ final readonly class Gate implements MiddlewareInterface
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
         if ($this->token === null) {
-            return Response::text(
-                "The dashboard is closed: it shows how the application runs, and nothing says who may see it.\n\nSet \"clockwerk.token\" to a secret and open this page with ?token=<the secret>, or name your own middleware in \"clockwerk.middleware\".\n",
+            return ErrorResponse::make(
+                $request,
                 403,
+                "The dashboard is closed: it shows how the application runs, and nothing says who may see it.\n\nSet \"clockwerk.token\" to a secret and open this page with ?token=<the secret>, or name your own middleware in \"clockwerk.middleware\".\n",
+                ['Cache-Control' => 'no-store'],
             );
         }
         $given = $request->getQueryParams()['token'] ?? null;
@@ -42,9 +44,11 @@ final readonly class Gate implements MiddlewareInterface
             $given = $match[1];
         }
         if (!is_string($given) || !hash_equals($this->token, $given)) {
-            return Response::text(
-                "The dashboard needs its token: open it with ?token=<the secret in \"clockwerk.token\">.\n",
+            return ErrorResponse::make(
+                $request,
                 401,
+                "The dashboard needs its token: open it with ?token=<the secret in \"clockwerk.token\">.\n",
+                ['Cache-Control' => 'no-store', 'WWW-Authenticate' => 'Bearer'],
             );
         }
         return $handler->handle($request);

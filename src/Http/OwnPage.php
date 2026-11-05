@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Crab\Clockwerk\Http;
 
-use Crab\Http\Response;
+use Crab\Contracts\Config\Config;
+use Crab\Http\ErrorResponse;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -21,22 +22,53 @@ use Psr\Http\Server\RequestHandlerInterface;
  */
 final readonly class OwnPage implements MiddlewareInterface
 {
+    private ?string $url;
+
+    public function __construct(Config $config)
+    {
+        $url = $config->get('app.url');
+        $this->url = is_string($url) && $url !== '' ? $url : null;
+    }
+
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
-        $json = str_starts_with(strtolower($request->getHeaderLine('Content-Type')), 'application/json');
+        $type = strtolower(trim(explode(';', $request->getHeaderLine('Content-Type'), 2)[0]));
         $site = strtolower($request->getHeaderLine('Sec-Fetch-Site'));
         $origin = $request->getHeaderLine('Origin');
-        $elsewhere =
-            $site !== '' && $site !== 'same-origin' && $site !== 'none'
-            || $origin !== ''
-            && strtolower((string) parse_url($origin, PHP_URL_HOST)) !== strtolower((string) preg_replace(
-                '/:\d+$/',
-                '',
-                $request->getHeaderLine('Host'),
-            ));
-        if (!$json || $elsewhere) {
-            return Response::text("This is done from the dashboard's own page.\n", 403);
+        $elsewhere = !in_array($site, ['', 'same-origin', 'none'], true);
+        // Fetch Metadata describes the browser's public origin, including behind a TLS proxy.
+        // Older browsers need the public app.url there; never trust raw forwarding headers.
+        if ($origin !== '' && ($site !== 'same-origin' || $this->url !== null)) {
+            $given = parse_url($origin);
+            $address =
+                $this->url ?? ($request->getUri()->getScheme() ?: 'http') . '://' . $request->getHeaderLine('Host');
+            $expected = self::origin(parse_url($address));
+            $elsewhere =
+                $elsewhere
+                || $given === false
+                || array_diff(array_keys($given), ['scheme', 'host', 'port']) !== []
+                || $expected === null
+                || self::origin($given) !== $expected;
+        }
+        if ($type !== 'application/json' || $elsewhere) {
+            return ErrorResponse::make($request, 403, 'This is done from the dashboard\'s own page.', [
+                'Cache-Control' => 'no-store',
+            ]);
         }
         return $handler->handle($request);
+    }
+
+    /**
+     * @param array<string, int|string>|false $parts
+     * @return array{string, string, int}|null
+     */
+    private static function origin(array|false $parts): ?array
+    {
+        $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+        $host = strtolower((string) ($parts['host'] ?? ''));
+        if (!in_array($scheme, ['http', 'https'], true) || $host === '') {
+            return null;
+        }
+        return [$scheme, $host, (int) ($parts['port'] ?? ($scheme === 'https' ? 443 : 80))];
     }
 }

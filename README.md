@@ -105,7 +105,7 @@ To let in your own administrators, name the middleware that does so, and the tok
 return ['middleware' => [TokenAuth::class, AdminsOnly::class]];
 ```
 
-Retrying and forgetting jobs is accepted only from the dashboard's own page: a request must be JSON and must not come from another site. So a cookie that logs your administrators in cannot be used by another site to delete jobs behind their backs.
+Retrying and forgetting jobs requires `Content-Type: application/json`. Browser requests must come from the same origin, including its scheme and port. Behind a proxy that terminates HTTPS, set `app.url` to the public application URL for browsers that do not send `Sec-Fetch-Site`. Command-line clients may omit browser origin headers and must still authenticate.
 
 ## What it costs
 
