@@ -131,6 +131,7 @@ Retrying and forgetting jobs requires `Content-Type: application/json`. Browser 
 ## What to know
 
 - **Counts are by the minute** and reach the page within `clockwerk.interval` seconds.
+- **Metric names are limited to 160 characters.** Longer route, job, queue and task names are truncated before aggregation and can merge when their first 160 characters match. A longer declared task name also does not match its recorded totals. Keep names within the limit until the storage format supports their full identity.
 - **A 4xx an action chose is not a failure.** `HttpException(404)` is counted as a request and not as an error; a `500`, or anything else thrown, is.
 - **Requests for no route** are grouped by method under `(no route)`. Unmatched extension methods share `OTHER (no route)`, so invented methods cannot create an unlimited number of counter names.
 - **Failed jobs:** up to 200 are listed, with secret fields replaced by `(hidden)`. Known secret values of four bytes or more are also removed from job errors, including URL-encoded forms. This is best-effort redaction; exception text can still contain sensitive information. Traces carry no call arguments.

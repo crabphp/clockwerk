@@ -40,6 +40,8 @@ curl -H "Authorization: Bearer $CLOCKWERK_TOKEN" \
 
 The range filters recorded counts and events. Live queue contents, failed jobs, worker heartbeats and declared schedules are independent of it. Reads are observations taken across several queries, not a transactional snapshot.
 
+Recorded metric names are truncated to 160 characters before aggregation. Names that differ only after that point merge, and a longer declared task name does not match its recorded totals. Use names within that limit; fixing existing data requires a storage migration that preserves full names.
+
 `jobs.installed` says whether the queue is available. `supervisors` describes configured queue assignments and worker limits, including the framework's default `queue` group when no supervisors are declared. `queues` includes configured queues, queues holding jobs, and queues with recorded attempts in the range. Each gives pending, delayed and processing counts, completed and failed counts in the range, retrying attempts, average duration, and the longest pending wait.
 
 `jobs.list` is populated only when `list` names a state. It contains at most 100 jobs across the queues: pending jobs by availability time, delayed jobs by their next due time, and processing jobs by reservation time, earliest first. `jobs.list_state` says which list was requested. Reading a list does not reserve or change jobs. `reserved_at` is the last reservation or lease renewal, so its age is not a job's full running time.
