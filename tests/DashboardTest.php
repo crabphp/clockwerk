@@ -30,6 +30,36 @@ final class DashboardTest extends TestCase
         $this->scenario('older error');
     }
 
+    public function testSlowAnswersAreNotSupersededByAutomaticPolling(): void
+    {
+        $this->scenario('slow polling');
+    }
+
+    public function testFrameworkErrorsShowTheirMessage(): void
+    {
+        $this->scenario('framework error');
+    }
+
+    public function testAnUnservedQueueCannotBeReportedAsKeepingUp(): void
+    {
+        $this->scenario('unserved queue');
+    }
+
+    public function testAnImpossibleTaskAndOverlapProtectionAreShown(): void
+    {
+        $this->scenario('schedule');
+    }
+
+    public function testTokenBootstrapAndJobActionsUseTheAuthenticatedApi(): void
+    {
+        $this->scenario('actions');
+    }
+
+    public function testWorkerNamesCannotCollideWithJavascriptObjectProperties(): void
+    {
+        $this->scenario('worker names');
+    }
+
     /**
      * @return iterable<string, array{string}>
      */

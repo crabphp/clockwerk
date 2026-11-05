@@ -284,7 +284,9 @@ async function call(path, options = {}) {
     const headers = { Accept: 'application/json', ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: 'Bearer ' + token } : {}) };
     const response = await fetch(base + path, { ...options, headers, cache: 'no-store' });
     if (response.status === 401 || response.status === 403) {
-        const error = new Error((await response.text()).trim());
+        let message = (await response.text()).trim();
+        try { message = JSON.parse(message).error?.message || message; } catch {}
+        const error = new Error(message);
         error.gate = true;
         // 403: the dashboard is closed to everyone, and no token would open it.
         error.closed = response.status === 403 && !options.method;
@@ -295,9 +297,11 @@ async function call(path, options = {}) {
 }
 
 let asked = 0;
+let refreshing = false;
 async function refresh() {
     // Answers may arrive out of order; only the answer to the latest question is kept.
     const mine = ++asked;
+    refreshing = true;
     try {
         // The jobs of a state one by one are asked for only while that list is open.
         const list = ui.page === 'queue' && listed.includes(ui.queueTab) ? '&list=' + ui.queueTab : '';
@@ -312,6 +316,8 @@ async function refresh() {
         ui.gate = Boolean(error.gate);
         ui.closed = Boolean(error.closed);
         ui.error = error.message || 'The dashboard could not be reached.';
+    } finally {
+        if (mine === asked) { refreshing = false; }
     }
     render();
 }
@@ -400,7 +406,7 @@ function overview(s) {
     const running = s.jobs.queues.reduce((sum, q) => sum + q.processing, 0);
     const errorRate = pct(s.requests.errors, s.requests.total);
     const slowest = sorted(s.requests.rows.filter((r) => r.runs > 0), ['avg_ms', -1]).slice(0, 6);
-    const groups = {};
+    const groups = Object.create(null);
     for (const worker of s.workers) { (groups[worker.group_name] ??= []).push(worker); }
     return `<div class="grid cards">
         ${stat('Requests', int(s.requests.total), `${(s.requests.total / s.minutes).toFixed(s.requests.total / s.minutes < 10 ? 1 : 0)} a minute`, spark(req, (d) => d.runs))}
@@ -414,8 +420,8 @@ function overview(s) {
     </div>
     <div class="grid three section">
         ${card('Slowest routes', 'by average', slowest.length ? `<ul class="list">${slowest.map((r) => `<li><span class="grow">${routeName(r.name)}</span><span class="num">${ms(r.avg_ms)}</span></li>`).join('')}</ul>` : empty('No requests yet', 'They appear here within a few seconds of being answered.'))}
-        ${card('Queues', 'pending now', s.jobs.installed ? `<ul class="list">${s.jobs.queues.map((q) => `<li><span class="grow mono">${esc(q.name)}</span><span class="muted num" style="font-size:12.5px">${q.processing ? int(q.processing) + ' running' : ''}${q.longest_wait >= 60 ? ' · waited ' + span(q.longest_wait) : ''}</span><span class="num ${q.pending + q.delayed > 0 ? '' : 'faint'}" style="min-width:36px;text-align:right">${int(q.pending + q.delayed)}</span></li>`).join('')}</ul>` : empty('No queue', 'Register <code>QueueProvider</code> to see it here.'))}
-        ${card('Workers', `${s.workers.length} alive`, Object.keys(groups).length ? `<ul class="list">${Object.entries(groups).map(([group, workers]) => `<li><span class="dot"></span><span class="grow mono">${esc(group)}</span><span class="num">${workers.length}</span><span class="muted num" style="min-width:64px;text-align:right">${bytes(workers.reduce((sum, w) => sum + w.memory, 0))}</span></li>`).join('')}</ul>` : empty('No worker heard from', 'Start <code>php cua serve</code>.'))}
+        ${card('Queues', 'pending now', s.jobs.installed ? `<ul class="list">${s.jobs.queues.map((q) => `<li><span class="grow mono">${esc(q.name)}</span><span class="muted num" style="font-size:12.5px">${q.processing ? int(q.processing) + ' running' : ''}${q.longest_wait >= 60 ? ' · waited ' + span(q.longest_wait) : ''}</span><span class="num ${q.pending + q.delayed > 0 ? '' : 'faint'}" style="min-width:36px;text-align:right">${int(q.pending + q.delayed)}</span></li>`).join('')}</ul>` : empty('No queue', 'Register <code>QueuePlugin</code> to see it here.'))}
+        ${card('Workers', `${s.workers.length} alive`, Object.keys(groups).length ? `<ul class="list">${Object.entries(groups).map(([group, workers]) => `<li><span class="dot"></span><span class="grow mono">${esc(group)}</span><span class="num">${workers.length}</span><span class="muted num" style="min-width:64px;text-align:right">${bytes(workers.reduce((sum, w) => sum + w.memory, 0))}</span></li>`).join('')}</ul>` : empty('No worker heard from', 'Start <code>php cua start</code>.'))}
     </div>
     <div class="section">${card('Latest exceptions', '', exceptionRows(s, s.exceptions.slice(0, 5), 'o'), `<a class="btn" href="#exceptions">All ${s.exceptions.length}</a>`)}</div>`;
 }
@@ -443,6 +449,10 @@ function queueVerdict(s, alive) {
     }
     if (!s.jobs.supervisors.length && !(alive.queue || 0) && s.jobs.queues.some((q) => q.pending || q.processing)) { problems.push(['bad', 'No worker is running']); }
     for (const q of s.jobs.queues) {
+        if (q.pending + q.processing > 0 && s.jobs.supervisors.length && !s.jobs.supervisors.some((sup) => sup.queues.includes(q.name))) {
+            unserved.add(q.name);
+            problems.push(['bad', `<b>${esc(q.name)}</b> has no worker · ${int(q.pending + q.processing)} waiting`]);
+        }
         if (q.longest_wait >= 60 && !unserved.has(q.name)) { problems.push([q.longest_wait >= 300 ? 'bad' : 'warn', `<b>${esc(q.name)}</b> is behind · oldest waited ${span(q.longest_wait)}`]); }
         const tries = q.completed + q.retried + q.failed;
         if (tries >= 10 && (q.retried + q.failed) / tries >= 0.25) { problems.push(['warn', `<b>${esc(q.name)}</b> · ${pctText(pct(q.retried + q.failed, tries))} of tries fail`]); }
@@ -454,9 +464,9 @@ function queueVerdict(s, alive) {
 }
 
 function queue(s) {
-    if (!s.jobs.installed) { return `<section class="card">${empty('No queue', 'Register <code>QueueProvider</code>.')}</section>`; }
+    if (!s.jobs.installed) { return `<section class="card">${empty('No queue', 'Register <code>QueuePlugin</code>.')}</section>`; }
     // "queue:mail" serves mail; one process doing the work of several is "queue:mail+default".
-    const alive = {};
+    const alive = Object.create(null);
     for (const worker of s.workers) {
         alive[worker.group_name] = (alive[worker.group_name] || 0) + 1;
         const names = worker.group_name.startsWith('queue:') ? worker.group_name.slice(6).split('+') : [];
@@ -551,25 +561,25 @@ function queue(s) {
 }
 
 function schedule(s) {
-    if (!s.tasks.installed) { return `<section class="card">${empty('No schedule', 'Register <code>ScheduleProvider</code> before <code>ClockwerkProvider</code> to see scheduled tasks here.')}</section>`; }
-    if (!s.tasks.rows.length) { return `<section class="card">${empty('Nothing is scheduled', 'Declare tasks on <code>Schedule</code> in a provider’s <code>register()</code>.')}</section>`; }
+    if (!s.tasks.installed) { return `<section class="card">${empty('No schedule', 'Register <code>SchedulePlugin</code> before <code>ClockwerkPlugin</code> to see scheduled tasks here.')}</section>`; }
+    if (!s.tasks.rows.length) { return `<section class="card">${empty('Nothing is scheduled', 'Declare tasks on <code>Schedule</code> in your setup’s <code>register()</code>.')}</section>`; }
     const running = s.workers.some((w) => w.group_name === 'schedule');
     const rows = s.tasks.rows.map((task) => {
         const state = task.runs === 0 ? ['', 'Not run yet'] : task.errors === 0 ? ['ok', 'Running well'] : task.errors === task.runs ? ['bad', 'Failing'] : ['warn', `${task.errors} failed`];
-        return `<tr class="row"><td class="name"><span class="mono">${esc(task.name)}</span>${task.one_server ? ' <span class="chip">one server</span>' : ''}</td>
+        return `<tr class="row"><td class="name"><span class="mono">${esc(task.name)}</span>${task.one_server ? ' <span class="chip">one server</span>' : ''}${task.without_overlapping ? ' <span class="chip">without overlapping</span>' : ''}</td>
             <td><span class="chip">${esc(task.when)}</span></td>
-            <td class="muted num">${task.next ? `${until(task.next, s.now)} <span class="faint">· ${stamp(task.next).replace(/:\d\d(?!.*:\d\d)/, '')}</span>` : 'while the scheduler runs'}</td>
+            <td class="muted num">${task.next_error ? `<span class="bad-text" title="${esc(task.next_error)}">No next run</span>` : task.next ? `${until(task.next, s.now)} <span class="faint">· ${stamp(task.next).replace(/:\d\d(?!.*:\d\d)/, '')}</span>` : 'while the scheduler runs'}</td>
             <td class="r num">${int(task.runs)}</td><td class="r num">${task.runs ? ms(task.avg_ms) : '<span class="faint">–</span>'}</td>
             <td class="r muted num">${task.last ? ago(task.last + 60, Math.max(s.now, task.last + 60)) : '<span class="faint">–</span>'}</td>
             <td class="r"><span class="pill ${state[0]}">${state[1]}</span></td></tr>`;
     }).join('');
-    return `${running ? '' : '<div class="banner">No scheduler is running, so nothing here will run. Start <code>php cua serve</code>, or <code>schedule:work</code> on its own.</div>'}
+    return `${running ? '' : '<div class="banner">No scheduler is running, so nothing here will run. Start <code>php cua start</code>, or <code>schedule:work</code> on its own.</div>'}
     ${card('Scheduled tasks', `${s.tasks.rows.length}`, `<div class="table-wrap"><table><thead><tr><th>Task</th><th>When</th><th>Next run</th><th class="r">Runs</th><th class="r">Average</th><th class="r">Last run</th><th class="r">State</th></tr></thead><tbody>${rows}</tbody></table></div>`)}`;
 }
 
 function workers(s) {
-    if (!s.workers.length) { return `<section class="card">${empty('No worker heard from', 'A worker reports every few seconds once <code>php cua serve</code>, <code>queue:work</code> or <code>schedule:work</code> is running.')}</section>`; }
-    const groups = {};
+    if (!s.workers.length) { return `<section class="card">${empty('No worker heard from', 'A worker reports every few seconds once <code>php cua start</code>, <code>queue:work</code> or <code>schedule:work</code> is running.')}</section>`; }
+    const groups = Object.create(null);
     for (const worker of s.workers) { (groups[worker.group_name] ??= []).push(worker); }
     return Object.entries(groups).map(([group, list], index) => `<div class="${index ? 'section' : ''}">${card(esc(group), `${list.length} ${list.length === 1 ? 'process' : 'processes'}`, `<div class="table-wrap"><table><thead><tr><th>Process</th><th>Host</th><th class="r">Up for</th><th class="r">Memory</th><th class="r">Handled</th><th class="r">Heard from</th></tr></thead><tbody>${list.map((w) => `<tr class="row"><td><span class="dot" style="display:inline-block;margin-right:10px"></span><span class="mono">${w.pid}</span></td><td class="muted">${esc(w.host)}</td><td class="r num">${span(s.now - w.started_at)}</td><td class="r num">${bytes(w.memory)}</td><td class="r num">${int(w.handled)}</td><td class="r muted num">${ago(w.seen_at, s.now)}</td></tr>`).join('')}</tbody></table></div>`)}</div>`).join('');
 }
@@ -708,7 +718,7 @@ route(true);
 refresh();
 // While the tab is in view and not paused; a chart being read is not redrawn under the pointer.
 setInterval(() => {
-    if (!ui.paused && !ui.gate && !document.hidden && !document.querySelector('.chart g.col:hover') && !ui.busy) { refresh(); }
+    if (!refreshing && !ui.paused && !ui.gate && !document.hidden && !document.querySelector('.chart g.col:hover') && !ui.busy) { refresh(); }
 }, 5000);
 })();
 </script>

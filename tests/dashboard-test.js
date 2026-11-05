@@ -8,15 +8,18 @@ const vm = require('node:vm');
 const [file, scenario, argument] = process.argv.slice(2);
 const requests = [];
 const events = {};
+const intervals = [];
 const app = { innerHTML: '', querySelector: () => null };
 const location = {
-    pathname: '/clockwerk', search: '',
+    pathname: '/clockwerk', search: scenario === 'actions' ? '?token=s3cret&view=kept' : '',
     hash: scenario === 'initial route' ? '#queue/' + argument : '#overview',
 };
-const storage = { getItem: () => null, setItem: () => {} };
+const stored = new Map();
+const storage = { getItem: (key) => stored.get(key) ?? null, setItem: (key, value) => stored.set(key, value) };
+let replaced = '';
 const context = {
     URLSearchParams, location, localStorage: storage, sessionStorage: storage,
-    history: { replaceState: () => {} },
+    history: { replaceState: (data, title, url) => { replaced = url; } },
     document: {
         documentElement: { dataset: {} }, activeElement: null, hidden: false,
         getElementById: () => app, querySelector: () => null, querySelectorAll: () => [],
@@ -27,7 +30,7 @@ const context = {
         addEventListener: (name, callback) => { events['window:' + name] = callback; },
     },
     fetch: (url, options) => new Promise((resolve, reject) => requests.push({ url, options, resolve, reject })),
-    setInterval: () => 0, setTimeout: () => 0, confirm: () => true,
+    setInterval: (callback) => intervals.push(callback), setTimeout: () => 0, confirm: () => true,
 };
 vm.createContext(context);
 const html = fs.readFileSync(file, 'utf8');
@@ -35,7 +38,7 @@ const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 const end = script.lastIndexOf('})();');
 // Expose existing functions only inside this isolated evaluation; the
 // resource on disk stays untouched and its startup still runs normally.
-const expose = 'globalThis.dashboard = { ui, refresh, queue, queueVerdict, exceptionRows };\n';
+const expose = 'globalThis.dashboard = { ui, refresh, queue, queueVerdict, exceptionRows, schedule, workers, overview };\n';
 vm.runInContext(script.slice(0, end) + expose + script.slice(end), context);
 const dashboard = context.dashboard;
 const turn = () => new Promise((resolve) => setImmediate(resolve));
@@ -68,6 +71,26 @@ const keys = (markup) => Array.from(markup.matchAll(/data-open="([^"]+)"/g), (ma
 
 async function run() {
     assert.equal(requests.length, 1, 'startup must ask once');
+    if (scenario === 'framework error') {
+        await response(0, JSON.stringify({ error: { status: 403, message: 'Configure the dashboard token.' } }), 403);
+        assert.equal(dashboard.ui.error, 'Configure the dashboard token.');
+        assert.match(app.innerHTML, /Configure the dashboard token\./);
+        assert.doesNotMatch(app.innerHTML, /&quot;status&quot;/);
+        return;
+    }
+    if (scenario === 'slow polling') {
+        for (let tick = 0; tick < 4; ++tick) { intervals[0](); }
+        assert.equal(requests.length, 1, 'polling must wait for the outstanding answer');
+        await response(0, state('Slow answer'));
+        assert.equal(dashboard.ui.state.app, 'Slow answer');
+        intervals[0]();
+        assert.equal(requests.length, 2, 'polling resumes after success');
+        requests[1].reject(new Error('offline'));
+        await turn();
+        intervals[0]();
+        assert.equal(requests.length, 3, 'polling resumes after failure');
+        return;
+    }
     if (scenario === 'latest answer' || scenario === 'older error') {
         const second = dashboard.refresh();
         await response(1, state('Newest'));
@@ -94,6 +117,66 @@ async function run() {
         return;
     }
     await response(0, state());
+    if (scenario === 'actions') {
+        assert.equal(replaced, '/clockwerk?view=kept#overview');
+        assert.equal(stored.get('clockwerk.token'), 's3cret');
+        assert.equal(requests[0].options.headers.Authorization, 'Bearer s3cret');
+        assert.doesNotMatch(requests[0].url, /token/);
+        const retry = click({ job: 'retry:job:1' });
+        assert.equal(requests[1].url, '/clockwerk/api/jobs/retry');
+        assert.equal(requests[1].options.method, 'POST');
+        assert.equal(requests[1].options.headers['Content-Type'], 'application/json');
+        assert.equal(requests[1].options.headers.Authorization, 'Bearer s3cret');
+        assert.deepEqual(JSON.parse(requests[1].options.body), { id: 'job:1' });
+        await click({ job: 'retry:job:1' });
+        assert.equal(requests.length, 2, 'a pending action prevents duplicate clicks');
+        await response(1, { retried: 1 });
+        await retry;
+        assert.match(dashboard.ui.toast, /1 job put back/);
+        assert.equal(dashboard.ui.busy, false);
+        assert.equal(requests.length, 3, 'a completed action refreshes the state');
+        await response(2, state());
+        context.confirm = () => false;
+        await click({ job: 'forget:all' });
+        assert.equal(requests.length, 3, 'cancelling forget all changes nothing');
+        context.confirm = () => true;
+        const forget = click({ job: 'forget:all' });
+        assert.equal(requests[3].url, '/clockwerk/api/jobs/forget');
+        assert.deepEqual(JSON.parse(requests[3].options.body), { id: 'all' });
+        await response(3, 'offline', 500);
+        await forget;
+        assert.equal(dashboard.ui.busy, false);
+        assert.match(dashboard.ui.toast, /500/);
+        return;
+    }
+    if (scenario === 'worker names') {
+        const s = state();
+        s.workers = [{ group_name: 'constructor', pid: 1, host: '<host>', started_at: 900, seen_at: 999, memory: 1000, handled: 1 }];
+        assert.match(dashboard.overview(s), /constructor/);
+        assert.match(dashboard.workers(s), /&lt;host&gt;/);
+        return;
+    }
+    if (scenario === 'schedule') {
+        const s = state();
+        s.tasks = { installed: true, rows: [{ name: '<task>', when: '0 0 31 2 *', one_server: true, without_overlapping: true, next: null, next_error: '<impossible>', runs: 0, errors: 0 }] };
+        const markup = dashboard.schedule(s);
+        assert.match(markup, /No next run/);
+        assert.match(markup, /without overlapping/);
+        assert.match(markup, /&lt;task&gt;/);
+        assert.match(markup, /&lt;impossible&gt;/);
+        assert.doesNotMatch(markup, /while the scheduler runs/);
+        return;
+    }
+    if (scenario === 'unserved queue') {
+        const s = state();
+        s.jobs.supervisors = [{ name: 'queue', queues: ['default'], workers: 1 }];
+        s.jobs.queues = [counts('default'), counts('unserved', { pending: 1, longest_wait: 1 })];
+        s.workers = [{ group_name: 'queue' }];
+        const markup = dashboard.queue(s);
+        assert.match(markup, /unserved<\/b> has no worker/);
+        assert.doesNotMatch(markup, /Keeping up/);
+        return;
+    }
     if (scenario === 'navigation') {
         dashboard.ui.page = 'requests';
         dashboard.ui.filter = 'orders';
