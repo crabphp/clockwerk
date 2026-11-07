@@ -2,7 +2,7 @@
 
 Crab Clockwerk follows [semantic versioning](https://semver.org). Before 1.0, a minor version may break what an application writes; the entry says what to change.
 
-## Unreleased
+## 0.1.1 — 2026-11-07
 
 - Check a job action's full browser origin and JSON media type. Use the framework's error responses, prevent dashboard framing, and suppress referrers containing a bootstrap token.
 - Keep each worker to one metrics write at a time, so a slow store cannot overwrite newer counts or accumulate heartbeat tasks. Use the application's clock for recording, retrying and schedule previews.

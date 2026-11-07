@@ -10,4 +10,4 @@ composer lint
 composer test
 ```
 
-The suite uses SQLite and executes the shipped JavaScript in Node.js. It needs no Redis, MySQL or S3 service. Without Node.js the JavaScript cases are skipped; CI installs Node.js and fails on skipped tests. CI tests PHP 8.4 and 8.5 against framework v0.6.1 and main. The package requires framework `^0.6`.
+The suite uses SQLite and executes the shipped JavaScript in Node.js. It needs no Redis, MySQL or S3 service. Without Node.js the JavaScript cases are skipped; CI installs Node.js and fails on skipped tests. CI tests PHP 8.4 and 8.5 against framework v0.6.3 and main. The package requires framework `^0.6`.
