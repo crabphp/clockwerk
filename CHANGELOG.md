@@ -2,6 +2,10 @@
 
 Crab Clockwerk follows [semantic versioning](https://semver.org). Before 1.0, a minor version may break what an application writes; the entry says what to change.
 
+## 0.2.1 — 2026-11-12
+
+- Requires `crabphp/framework` ^0.7.1. The dashboard's middleware (`Gate`, `OwnPage`, `RecordRequests`) implement Crab's own `Middleware::handle(Request $request, Handler $next)`, now that the framework has dropped PSR-15.
+
 ## 0.2.0 — 2026-11-12
 
 - Requires `crabphp/framework` ^0.7, for its 0.7.0 release.
