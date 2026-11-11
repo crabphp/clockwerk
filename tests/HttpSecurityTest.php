@@ -9,12 +9,12 @@ use Crab\Clockwerk\ClockwerkPlugin;
 use Crab\Clockwerk\Http\OwnPage;
 use Crab\Clockwerk\Store;
 use Crab\Config\Config;
+use Crab\Contracts\Http\Handler;
 use Crab\Contracts\Queue\Store as QueueStore;
 use Crab\Http\Request;
 use Crab\Http\Response;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use Psr\Http\Server\RequestHandlerInterface;
 
 final class HttpSecurityTest extends TestCase
 {
@@ -87,7 +87,7 @@ final class HttpSecurityTest extends TestCase
 
     public function testEquivalentOriginsAndRequestsWithoutBrowserHeadersAreAccepted(): void
     {
-        $handler = $this->createStub(RequestHandlerInterface::class);
+        $handler = $this->createStub(Handler::class);
         $handler->method('handle')->willReturn(Response::text('allowed'));
         $guard = new OwnPage(new Config());
         foreach ([
@@ -96,7 +96,7 @@ final class HttpSecurityTest extends TestCase
             ['https://[::1]:8443',  'https://[::1]:8443'],
             ['https://app.example', ''],
         ] as [$address, $origin]) {
-            $response = $guard->process(new Request('POST', $address, [
+            $response = $guard->handle(new Request('POST', $address, [
                 'Content-Type' => 'application/json; charset=utf-8',
                 'Origin' => $origin,
             ]), $handler);
@@ -106,7 +106,7 @@ final class HttpSecurityTest extends TestCase
 
     public function testThePublicApplicationUrlSuppliesTheOriginBehindATlsProxy(): void
     {
-        $handler = $this->createStub(RequestHandlerInterface::class);
+        $handler = $this->createStub(Handler::class);
         $handler->method('handle')->willReturn(Response::text('allowed'));
         $guard = new OwnPage(new Config(['app' => ['url' => 'https://app.example:8443/base']]));
         $request = new Request('POST', 'http://backend:8080/clockwerk/api/jobs/retry', [
@@ -114,20 +114,20 @@ final class HttpSecurityTest extends TestCase
             'Origin' => 'https://app.example:8443',
         ]);
 
-        self::assertSame(200, $guard->process($request, $handler)->getStatusCode());
+        self::assertSame(200, $guard->handle($request, $handler)->getStatusCode());
         self::assertSame(
             403,
-            $guard->process($request->withHeader('Origin', 'http://app.example:8443'), $handler)->getStatusCode(),
+            $guard->handle($request->withHeader('Origin', 'http://app.example:8443'), $handler)->getStatusCode(),
         );
     }
 
     public function testOnlyTheJsonMediaTypeIsAccepted(): void
     {
-        $handler = $this->createMock(RequestHandlerInterface::class);
+        $handler = $this->createMock(Handler::class);
         $handler->expects(self::never())->method('handle');
         $guard = new OwnPage(new Config());
         foreach (['application/jsonp', 'application/json-patch+json', 'text/plain', ''] as $type) {
-            self::assertSame(403, $guard->process(new Request('POST', '/', [
+            self::assertSame(403, $guard->handle(new Request('POST', '/', [
                 'Content-Type' => $type,
             ]), $handler)->getStatusCode());
         }

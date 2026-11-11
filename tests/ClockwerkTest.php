@@ -14,6 +14,9 @@ use Crab\Clockwerk\Secrets;
 use Crab\Clockwerk\Store;
 use Crab\Config\Config;
 use Crab\Console\Output;
+use Crab\Contracts\Http\Handler;
+use Crab\Contracts\Http\Middleware;
+use Crab\Contracts\Http\Request as RequestContract;
 use Crab\Contracts\Queue\Queue;
 use Crab\Contracts\Schedule\Schedule;
 use Crab\Database\DatabasePlugin;
@@ -27,9 +30,6 @@ use Crab\Schedule\SchedulePlugin;
 use Crab\Schedule\Scheduler;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
-use Psr\Http\Message\ServerRequestInterface;
-use Psr\Http\Server\MiddlewareInterface;
-use Psr\Http\Server\RequestHandlerInterface;
 
 final class Greet
 {
@@ -49,12 +49,12 @@ final class Leaky
     }
 }
 
-final class OnlyAdmins implements MiddlewareInterface
+final class OnlyAdmins implements Middleware
 {
-    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
+    public function handle(RequestContract $request, Handler $next): ResponseInterface
     {
         return str_contains($request->getHeaderLine('Cookie'), 'admin=1')
-            ? $handler->handle($request)
+            ? $next->handle($request)
             : Response::text('Log in first.', 401);
     }
 }

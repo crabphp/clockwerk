@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Crab\Clockwerk\Http;
 
 use Crab\Contracts\Config\Config;
+use Crab\Contracts\Http\Handler;
+use Crab\Contracts\Http\Middleware;
+use Crab\Contracts\Http\Request;
 use Crab\Http\ErrorResponse;
 use Psr\Http\Message\ResponseInterface;
-use Psr\Http\Message\ServerRequestInterface;
-use Psr\Http\Server\MiddlewareInterface;
-use Psr\Http\Server\RequestHandlerInterface;
 
 /**
  * Lets in whoever knows the dashboard's token, "clockwerk.token", and no one
@@ -19,7 +19,7 @@ use Psr\Http\Server\RequestHandlerInterface;
  * It guards the dashboard unless "clockwerk.middleware" names middleware of
  * the application's own to do so.
  */
-final readonly class Gate implements MiddlewareInterface
+final readonly class Gate implements Middleware
 {
     private ?string $token;
 
@@ -29,7 +29,7 @@ final readonly class Gate implements MiddlewareInterface
         $this->token = is_string($token) && $token !== '' ? $token : null;
     }
 
-    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
+    public function handle(Request $request, Handler $next): ResponseInterface
     {
         if ($this->token === null) {
             return ErrorResponse::make(
@@ -51,6 +51,6 @@ final readonly class Gate implements MiddlewareInterface
                 ['Cache-Control' => 'no-store', 'WWW-Authenticate' => 'Bearer'],
             );
         }
-        return $handler->handle($request);
+        return $next->handle($request);
     }
 }

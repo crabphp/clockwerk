@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Crab\Clockwerk\Http;
 
 use Crab\Contracts\Config\Config;
+use Crab\Contracts\Http\Handler;
+use Crab\Contracts\Http\Middleware;
+use Crab\Contracts\Http\Request;
 use Crab\Http\ErrorResponse;
 use Psr\Http\Message\ResponseInterface;
-use Psr\Http\Message\ServerRequestInterface;
-use Psr\Http\Server\MiddlewareInterface;
-use Psr\Http\Server\RequestHandlerInterface;
 
 /**
  * Lets a request that changes something through only when the
@@ -20,7 +20,7 @@ use Psr\Http\Server\RequestHandlerInterface;
  * The page sends JSON, which a form on another site cannot, and a
  * browser says where a request comes from, which must be here.
  */
-final readonly class OwnPage implements MiddlewareInterface
+final readonly class OwnPage implements Middleware
 {
     private ?string $url;
 
@@ -30,7 +30,7 @@ final readonly class OwnPage implements MiddlewareInterface
         $this->url = is_string($url) && $url !== '' ? $url : null;
     }
 
-    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
+    public function handle(Request $request, Handler $next): ResponseInterface
     {
         $type = strtolower(trim(explode(';', $request->getHeaderLine('Content-Type'), 2)[0]));
         $site = strtolower($request->getHeaderLine('Sec-Fetch-Site'));
@@ -55,7 +55,7 @@ final readonly class OwnPage implements MiddlewareInterface
                 'Cache-Control' => 'no-store',
             ]);
         }
-        return $handler->handle($request);
+        return $next->handle($request);
     }
 
     /**
