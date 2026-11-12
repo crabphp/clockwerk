@@ -112,41 +112,6 @@
   :root { --size: 14px; --lh: 22px; --pad-x: 16px; --pad-y: 24px; }
 }
 
-/* The shared system currently specifies dark colours only. Light mode
-   overrides colour tokens; all component geometry stays in the shared CSS. */
-:root[data-theme="light"] {
-  color-scheme: light;
-  --bg: #ffffff;
-  --surface: rgba(0, 0, 0, .035);
-  --surface-hover: rgba(0, 0, 0, .06);
-  --overlay: rgba(0, 0, 0, .45);
-  --strong: #111111;
-  --text: rgba(0, 0, 0, .88);
-  --muted: rgba(0, 0, 0, .65);
-  --faint: rgba(0, 0, 0, .56);
-  --line: rgba(0, 0, 0, .14);
-  --line-strong: rgba(0, 0, 0, .48);
-  --amber: #805a00;
-  --amber-wash: rgba(128, 90, 0, .10);
-  --ok: #247a35;
-  --warn: #9c4c08;
-  --danger: #ba2450;
-  --info: #137997;
-  --chart-1: #987100;
-  --chart-2: #167e9e;
-  --chart-3: #aa5b13;
-  --chart-4: #a03db5;
-  --chart-5: #287f39;
-  --chart-6: #7845ce;
-  --chart-7: #ba2850;
-  --chart-other: #737373;
-  --seq-1: #f9efcf;
-  --seq-2: #ead18b;
-  --seq-3: #d2ad45;
-  --seq-4: #ae8515;
-  --seq-5: #805a00;
-}
-
 /* Embedded JetBrains Mono font licence:
 Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)
 
@@ -1208,10 +1173,7 @@ const store = {
     get(key, fallback) { try { return JSON.parse(localStorage.getItem('clockwerk.' + key)) ?? fallback; } catch { return fallback; } },
     set(key, value) { try { localStorage.setItem('clockwerk.' + key, JSON.stringify(value)); } catch {} },
 };
-const savedTheme = store.get('theme', null);
-const preferredTheme = typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
 const ui = {
-    theme: savedTheme === 'light' || savedTheme === 'dark' ? savedTheme : preferredTheme,
     page: 'overview',
     minutes: store.get('minutes', 60),
     paused: false,
@@ -1230,8 +1192,6 @@ const ui = {
     toast: null,
 };
 
-document.documentElement.dataset.theme = ui.theme;
-const themeButton = () => `<button class="quiet" data-theme-toggle aria-label="Switch to ${ui.theme === 'dark' ? 'light' : 'dark'} theme">${ui.theme === 'dark' ? 'Light' : 'Dark'} theme</button>`;
 
 // The token arrives once in the address and is kept for the tab, out of the address bar and the history.
 const query = new URLSearchParams(location.search);
@@ -1576,7 +1536,7 @@ function gate() {
     const content = ui.closed
         ? `<h2>The dashboard is closed</h2><p class="muted">${esc(ui.error).replace(/\n+/g, '<br>')}</p>`
         : `<h2>The dashboard needs its token</h2><p class="muted">It is the secret in <code>clockwerk.token</code>.${token ? ' The one this tab has was not accepted.' : ''}</p><form data-token><div class="field"><label for="dashboard-token">Token</label><input id="dashboard-token" type="password" autocomplete="off" autofocus></div><button class="solid">Open</button></form>`;
-    return `<a class="skip-link" href="#main">Skip to content</a><div class="page wide"><header class="site-header"><span class="wordmark">clockwerk<span>.</span></span>${themeButton()}</header><main id="main"><h1>Clockwerk</h1><section class="gate">${content}</section></main></div>`;
+    return `<a class="skip-link" href="#main">Skip to content</a><div class="page wide"><header class="site-header"><span class="wordmark">clockwerk<span>.</span></span></header><main id="main"><h1>Clockwerk</h1><section class="gate">${content}</section></main></div>`;
 }
 
 const more = (list, total) => total > ui.shown[list] ? `<div class="more"><button data-more="${list}">Show ${Math.min(25, total - ui.shown[list])} more</button> <span class="muted">${ui.shown[list]} of ${total} shown</span></div>` : '';
@@ -1587,7 +1547,7 @@ function render() {
     const app = document.getElementById('app');
     if (ui.gate) { app.innerHTML = gate(); return; }
     const s = ui.state;
-    if (!s) { app.innerHTML = `<a class="skip-link" href="#main">Skip to content</a><main id="main" class="page wide"><header class="site-header"><span class="wordmark">clockwerk<span>.</span></span>${themeButton()}</header><h1>Clockwerk</h1><div class="empty" role="status">${ui.error ? `<b>The dashboard could not be reached</b>${esc(ui.error)}` : 'Loading…'}</div></main>`; return; }
+    if (!s) { app.innerHTML = `<a class="skip-link" href="#main">Skip to content</a><main id="main" class="page wide"><header class="site-header"><span class="wordmark">clockwerk<span>.</span></span></header><h1>Clockwerk</h1><div class="empty" role="status">${ui.error ? `<b>The dashboard could not be reached</b>${esc(ui.error)}` : 'Loading…'}</div></main>`; return; }
     document.title = `${s.app} · Clockwerk`;
     const counts = { queue: s.jobs.failed_total, exceptions: s.exceptions.length };
     const [, title] = pages.find(([id]) => id === ui.page);
@@ -1595,7 +1555,7 @@ function render() {
     const menuOpen = document.querySelector('.dashboard-nav')?.open ?? true;
     const scroll = window.scrollY;
     app.innerHTML = `<a class="skip-link" href="#main">Skip to content</a><div class="shell wide">
-        <header class="site-header"><a class="wordmark" href="#overview">clockwerk<span>.</span><small title="${esc(s.app)}">${esc(s.app)}</small></a>${themeButton()}</header>
+        <header class="site-header"><a class="wordmark" href="#overview">clockwerk<span>.</span><small title="${esc(s.app)}">${esc(s.app)}</small></a></header>
         <details class="shell-nav dashboard-nav" ${menuOpen ? 'open' : ''}>
             <summary>Dashboard menu</summary>
             <nav class="nav-list" aria-label="Dashboard"><ul>${pages.map(([id, label]) => `<li><a href="#${id}" ${id === ui.page ? 'aria-current="page"' : ''}><span>${label}</span>${counts[id] ? `<span class="count">${counts[id] > 99 ? '99+' : counts[id]}</span>` : ''}</a></li>`).join('')}</ul></nav>
@@ -1622,15 +1582,8 @@ function toast(text) {
 }
 
 document.addEventListener('click', async (event) => {
-    const target = event.target.closest('[data-range], [data-pause], [data-sort], [data-job], [data-more], [data-job-filter], [data-open], [data-expand], [data-theme-toggle]');
+    const target = event.target.closest('[data-range], [data-pause], [data-sort], [data-job], [data-more], [data-job-filter], [data-open], [data-expand]');
     if (!target) { return; }
-    if ('themeToggle' in target.dataset) {
-        ui.theme = ui.theme === 'dark' ? 'light' : 'dark';
-        document.documentElement.dataset.theme = ui.theme;
-        store.set('theme', ui.theme);
-        render();
-        return;
-    }
     if (target.dataset.expand) {
         ui.open.has(target.dataset.expand) ? ui.open.delete(target.dataset.expand) : ui.open.add(target.dataset.expand);
         render();
