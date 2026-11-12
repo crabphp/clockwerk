@@ -244,7 +244,7 @@ async function run() {
         s.jobs.recent.unshift({ ...job, id: 'newer', at: 991 });
         let markup = dashboard.queue(s);
         assert.equal(keys(markup)[1], key);
-        assert.match(markup, /<dd class="mono">older<\/dd>/);
+        assert.match(markup, /<dt>Id<\/dt><dd>older<\/dd>/);
         s.jobs.recent.unshift({ ...job, at: 992 });
         markup = dashboard.queue(s);
         assert.notEqual(keys(markup)[0], keys(markup)[2], 'different tries of the same id need different identities');
@@ -277,7 +277,7 @@ async function run() {
         assert.match(markup, />1\/2<\/span>/);
         assert.match(markup, /rest<\/b> has 1 of 2 workers/);
         assert.doesNotMatch(markup, /has no worker/);
-        assert.equal((markup.match(/<td class="r num">1<\/td>/g) || []).length, 3);
+        assert.equal((markup.match(/<td class="num">1<\/td>/g) || []).length, 3);
         return;
     }
     if (scenario === 'queue overview') {
@@ -289,7 +289,7 @@ async function run() {
         for (const tab of ['overview', 'pending', 'processing', 'delayed', 'recent', 'failed']) {
             assert.match(markup, new RegExp('href="#queue/' + tab + '"'));
         }
-        const failed = markup.match(/<div class="label">Failed<\/div><div class="value num">([\s\S]*?)<\/div>/)[1];
+        const failed = markup.match(/<dt>Failed<\/dt><dd>([\s\S]*?)<\/dd>/)[1];
         assert.match(failed, />2\+</);
         assert.doesNotMatch(failed, /99/);
         assert.match(markup, /Pending[^]*Processing[^]*Delayed/);
