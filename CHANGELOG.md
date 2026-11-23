@@ -2,6 +2,11 @@
 
 Crab Clockwerk follows [semantic versioning](https://semver.org). Before 1.0, a minor version may break what an application writes; the entry says what to change.
 
+## 0.2.2 — 2026-11-23
+
+- Center the dashboard workspace with horizontal navigation, clearer metric and table typography, and links from overview warnings to the relevant detail pages.
+- Follow the system color scheme by default, or choose a persistent light or dark theme.
+
 ## 0.2.1 — 2026-11-12
 
 - Requires `crabphp/framework` ^0.7.1. The dashboard's middleware (`Gate`, `OwnPage`, `RecordRequests`) implement Crab's own `Middleware::handle(Request $request, Handler $next)`, now that the framework has dropped PSR-15.

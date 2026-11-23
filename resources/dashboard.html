@@ -911,6 +911,34 @@ tr.detail pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
   .dashboard-panel > .toolbar .panel-actions { margin-left: 0; width: 100%; }
   tr.detail pre { margin-inline: 0; padding-inline: 1ch; }
 }
+/* Clockwerk's workspace: navigation above the data, one centered reading axis. */
+:root { --font: system-ui, sans-serif; --size: 14px; --chart-1: #729bbb; --chart-2: var(--danger); }
+:root[data-theme="light"] {
+  color-scheme: light; --bg: #fafaf8; --strong: #171c20; --text: #283137; --muted: #515e66; --faint: #5e696f;
+  --surface: #eeefed; --surface-hover: #e5e9e9; --line: #d4d9d9; --line-strong: #808b90; --amber: #865306;
+  --ok: #176c4d; --warn: #875313; --danger: #a72c42; --info: #286085; --chart-1: #507a98;
+}
+.shell.wide { display: block; max-width: var(--wide); }
+.site-header { align-items: center; margin-bottom: var(--lh); }
+.wordmark { font-size: 19px; } .wordmark small { font-size: 14px; }
+h1,h2 { text-transform: none; } h1 { font-size: 26px; line-height: 1.25; } h2 { font-size: 17px; }
+h1::before,h2::before,button::before,button::after,.button::before,.button::after { content: none; }
+code,pre,.method { font-family: 'JetBrains Mono', monospace; }
+.dashboard-nav { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 2ch; margin-bottom: 28px; border-bottom: 1px solid var(--line); }
+.dashboard-nav ul { display: flex; flex-wrap: wrap; gap: 0 2ch; list-style: none; margin: 0; padding: 0; }
+.dashboard-nav a { padding-block: 10px; } .dashboard-nav a[aria-current] { box-shadow: inset 0 -2px var(--amber); }
+.dashboard-nav.nav-list a[aria-current] > :first-child::before { content: none; }
+.dashboard-nav .live { margin: 0; } .dashboard-top { margin-bottom: 24px; }
+.segmented { gap: 0; background: var(--surface); border-radius: 6px; }
+.segmented button { padding-inline: 10px; border-radius: inherit; } .segmented button[aria-pressed=true] { background: var(--surface-hover); color: var(--strong); }
+.dashboard-stats { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 16px; }
+.dashboard-stats .stat { min-width: 0; padding: 0; margin: 0; border: 0; } .stat dd { font-size: 26px; line-height: 1.4; font-variant-numeric: tabular-nums; } .stat dd small { font-size: 14px; }
+.section { margin-top: 30px; } .dashboard-panel .toolbar { margin-bottom: 10px; }
+th,td { border-width: 0 0 1px; } .error-count { color: var(--danger); }
+@media (min-width: 960px) { .queue-capacity:has(> :nth-child(2)) { grid-template-columns: minmax(0, 2.5fr) minmax(0, 1fr); } }
+.attention { display: flex; flex-wrap: wrap; gap: .5em 1.5em; margin-bottom: 22px; } .attention a { text-decoration: underline; text-underline-offset: 3px; }
+.gate { margin-inline: auto; } .page.wide:has(.gate) { max-width: 48ch; }
+@media (max-width: 700px) { .dashboard-stats { grid-template-columns: repeat(2,minmax(0,1fr)); } .dashboard-nav { display: block; } .dashboard-nav .live { padding-block: 4px; } .dashboard-nav ul { flex-wrap: nowrap; overflow-x: auto; } }
 </style>
 </head>
 <body>
@@ -1173,6 +1201,13 @@ const store = {
     get(key, fallback) { try { return JSON.parse(localStorage.getItem('clockwerk.' + key)) ?? fallback; } catch { return fallback; } },
     set(key, value) { try { localStorage.setItem('clockwerk.' + key, JSON.stringify(value)); } catch {} },
 };
+const scheme = window.matchMedia?.('(prefers-color-scheme: dark)');
+let preference = store.get('theme', 'system');
+const applyTheme = () => { document.documentElement.dataset.theme = preference === 'system' ? (scheme?.matches ? 'dark' : 'light') : preference; };
+applyTheme();
+scheme?.addEventListener('change', applyTheme);
+const themeControl = () => `<select aria-label="Color theme" data-theme-choice style="width:auto;appearance:auto;background-image:none;padding-inline:8px">${['system','light','dark'].map(t => `<option value="${t}" ${preference === t ? 'selected' : ''}>${{system:'System theme',light:'Light theme',dark:'Dark theme'}[t]}</option>`).join('')}</select>`;
+document.addEventListener('change', e => { if (e.target.matches('[data-theme-choice]')) { preference = e.target.value; store.set('theme', preference); applyTheme(); } });
 const ui = {
     page: 'overview',
     minutes: store.get('minutes', 60),
@@ -1347,7 +1382,13 @@ function overview(s) {
     const slowest = sorted(s.requests.rows.filter((r) => r.runs > 0), ['avg_ms', -1]).slice(0, 6);
     const groups = Object.create(null);
     for (const worker of s.workers) { (groups[worker.group_name] ??= []).push(worker); }
-    return `<div class="stats dashboard-stats">
+    const issues = [
+        !s.workers.length && '<a href="#workers">Check missing workers</a>',
+        s.jobs.failed_total > 0 && `<a href="#queue/failed">Review ${int(s.jobs.failed_total)}${s.jobs.failed_more ? '+' : ''} failed jobs</a>`,
+        s.requests.errors > 0 && `<a href="#requests">Inspect ${int(s.requests.errors)} failed requests</a>`,
+        s.exceptions.length > 0 && '<a href="#exceptions">Inspect latest exceptions</a>',
+    ].filter(Boolean);
+    return `${issues.length ? `<div class="attention"><strong>Needs attention</strong>${issues.join('')}</div>` : ''}<div class="stats dashboard-stats">
         ${stat('Requests', int(s.requests.total), `${(s.requests.total / s.minutes).toFixed(s.requests.total / s.minutes < 10 ? 1 : 0)} a minute`, spark(req, (d) => d.runs))}
         ${stat('Average response', s.requests.total ? ms(s.requests.avg_ms).replace(/ (\w+)$/, '<small>$1</small>') : '–', s.requests.total ? `slowest ${ms(s.requests.max_ms)}` : 'no requests yet', spark(req, (d) => d.runs ? d.total_ms / d.runs : 0))}
         ${stat('Failed requests', `<span class="${errorRate >= 1 ? 'error-count' : ''}">${pctText(errorRate)}</span>`, `${int(s.requests.errors)} of ${int(s.requests.total)} answered 5xx`, spark(req, (d) => d.errors))}
@@ -1491,7 +1532,7 @@ function queue(s) {
         <a href="#queue/recent">${stat('Completed', int(completed), `${(completed / s.minutes).toFixed(completed / s.minutes < 10 ? 1 : 0)}/min`)}</a>
         <a href="#queue/failed">${stat('Failed', `<span class="${counts.failed ? 'error-count' : ''}">${int(counts.failed)}${s.jobs.failed_more ? '+' : ''}</span>`, sum('retried') ? `${int(sum('retried'))} retried` : '')}</a>
     </div>
-    <div class="cols dashboard-two section">
+    <div class="cols dashboard-two section queue-capacity">
         ${card('Queues', '', `<div class="table-wrap"><table class="hover"><thead><tr><th>Queue</th><th class="num">Pending</th><th class="num">Processing</th><th class="num">Delayed</th><th class="num">Completed</th><th class="num">Failed</th><th class="num" title="How long the oldest pending job has waited">Wait</th><th class="num">Workers</th></tr></thead><tbody>${queueRows}</tbody></table></div>`)}
         ${supervisors ? card('Supervisors', '', `<ul class="dashboard-list">${supervisors}</ul>`) : ''}
     </div>
@@ -1536,7 +1577,7 @@ function gate() {
     const content = ui.closed
         ? `<h2>The dashboard is closed</h2><p class="muted">${esc(ui.error).replace(/\n+/g, '<br>')}</p>`
         : `<h2>The dashboard needs its token</h2><p class="muted">It is the secret in <code>clockwerk.token</code>.${token ? ' The one this tab has was not accepted.' : ''}</p><form data-token><div class="field"><label for="dashboard-token">Token</label><input id="dashboard-token" type="password" autocomplete="off" autofocus></div><button class="solid">Open</button></form>`;
-    return `<a class="skip-link" href="#main">Skip to content</a><div class="page wide"><header class="site-header"><span class="wordmark">clockwerk<span>.</span></span></header><main id="main"><h1>Clockwerk</h1><section class="gate">${content}</section></main></div>`;
+    return `<a class="skip-link" href="#main">Skip to content</a><div class="page wide"><header class="site-header"><span class="wordmark">clockwerk<span>.</span></span>${themeControl()}</header><main id="main"><h1>Clockwerk</h1><section class="gate">${content}</section></main></div>`;
 }
 
 const more = (list, total) => total > ui.shown[list] ? `<div class="more"><button data-more="${list}">Show ${Math.min(25, total - ui.shown[list])} more</button> <span class="muted">${ui.shown[list]} of ${total} shown</span></div>` : '';
@@ -1552,15 +1593,12 @@ function render() {
     const counts = { queue: s.jobs.failed_total, exceptions: s.exceptions.length };
     const [, title] = pages.find(([id]) => id === ui.page);
     const keep = document.activeElement?.matches?.('[data-filter]') ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : null;
-    const menuOpen = document.querySelector('.dashboard-nav')?.open ?? true;
     const scroll = window.scrollY;
     app.innerHTML = `<a class="skip-link" href="#main">Skip to content</a><div class="shell wide">
-        <header class="site-header"><a class="wordmark" href="#overview">clockwerk<span>.</span><small title="${esc(s.app)}">${esc(s.app)}</small></a></header>
-        <details class="shell-nav dashboard-nav" ${menuOpen ? 'open' : ''}>
-            <summary>Dashboard menu</summary>
-            <nav class="nav-list" aria-label="Dashboard"><ul>${pages.map(([id, label]) => `<li><a href="#${id}" ${id === ui.page ? 'aria-current="page"' : ''}><span>${label}</span>${counts[id] ? `<span class="count">${counts[id] > 99 ? '99+' : counts[id]}</span>` : ''}</a></li>`).join('')}</ul></nav>
+        <header class="site-header"><a class="wordmark" href="#overview">clockwerk<span>.</span><small title="${esc(s.app)}">${esc(s.app)}</small></a>${themeControl()}</header>
+        <nav class="dashboard-nav nav-list" aria-label="Dashboard"><ul>${pages.map(([id, label]) => `<li><a href="#${id}" ${id === ui.page ? 'aria-current="page"' : ''}><span>${label}</span>${counts[id] ? `<span class="count">${counts[id] > 99 ? '99+' : counts[id]}</span>` : ''}</a></li>`).join('')}</ul>
             <div class="live"><span class="badge ${ui.error ? 'danger' : ui.paused ? 'warn' : 'ok'}">${ui.error ? 'Not reachable' : ui.paused ? 'Paused' : 'Live'}</span><span class="when faint">${clock(s.now)}</span></div>
-        </details>
+        </nav>
         <main id="main" class="shell-main">
             <div class="toolbar dashboard-top"><h1>${title}</h1><span class="muted">the last ${ranges.find(([m]) => m === s.minutes)?.[1] ?? s.minutes + 'm'}</span>
                 <div class="segmented" role="group" aria-label="Time range">${ranges.map(([m, label]) => `<button data-range="${m}" aria-pressed="${m === ui.minutes}">${label}</button>`).join('')}</div>
@@ -1648,7 +1686,7 @@ route(true);
 refresh();
 // While the tab is in view and not paused; a chart being read is not redrawn under the pointer.
 setInterval(() => {
-    if (!refreshing && !ui.paused && !ui.gate && !document.hidden && !document.querySelector('.chart-plot:hover, .chart:focus-within') && !ui.busy) { refresh(); }
+    if (!refreshing && !ui.paused && !ui.gate && !document.hidden && !document.querySelector('.chart-plot:hover, .chart:focus-within, [data-theme-choice]:focus') && !ui.busy) { refresh(); }
 }, 5000);
 })();
 </script>
