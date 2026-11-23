@@ -161,7 +161,7 @@ async function run() {
         s.tasks = { installed: true, rows: [{ name: '<task>', when: '0 0 31 2 *', one_server: true, without_overlapping: true, next: null, next_error: '<impossible>', runs: 0, errors: 0 }] };
         const markup = dashboard.schedule(s);
         assert.match(markup, /No next run/);
-        assert.match(markup, /without overlapping/);
+        assert.match(markup, /No overlap/);
         assert.match(markup, /&lt;task&gt;/);
         assert.match(markup, /&lt;impossible&gt;/);
         assert.doesNotMatch(markup, /while the scheduler runs/);

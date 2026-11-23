@@ -938,6 +938,48 @@ th,td { border-width: 0 0 1px; } .error-count { color: var(--danger); }
 @media (min-width: 960px) { .queue-capacity:has(> :nth-child(2)) { grid-template-columns: minmax(0, 2.5fr) minmax(0, 1fr); } }
 .attention { display: flex; flex-wrap: wrap; gap: .5em 1.5em; margin-bottom: 22px; } .attention a { text-decoration: underline; text-underline-offset: 3px; }
 .gate { margin-inline: auto; } .page.wide:has(.gate) { max-width: 48ch; }
+/* Small labels: soft pills that never wrap mid-word and keep their distance. */
+.chip, .tag { display: inline-block; padding: 1px 8px; border: 0; border-radius: 999px; background: var(--surface); color: var(--muted); font-size: 12px; line-height: 18px; white-space: nowrap; }
+.chip + .chip { margin-left: 4px; }
+.tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+code { font-size: 13px; }
+td code.faint { font-size: 12px; }
+.task-name code { color: var(--strong); }
+.schedule-table td { vertical-align: top; }
+.schedule-table td:nth-child(2), .schedule-table td:nth-child(3) { white-space: nowrap; }
+/* Counts beside tab labels. */
+.tabs > a { display: inline-flex; align-items: center; gap: 6px; }
+.tabs .count, .dashboard-nav .count { display: inline-block; min-width: 20px; padding: 0 6px; border-radius: 999px; background: var(--surface); color: var(--muted); font-size: 12px; line-height: 18px; text-align: center; }
+.dashboard-nav a { align-items: center; }
+/* Headline numbers as cards. */
+.dashboard-stats .stat { padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+:root[data-theme="light"] .dashboard-stats .stat { background: #fff; }
+.dashboard-stats a:hover .stat { border-color: var(--line-strong); }
+.dashboard-stats .stat dt { font-size: 13px; }
+.dashboard-stats .stat > small { color: var(--muted); }
+/* Needs attention: a callout, not a row of links. */
+.attention { align-items: center; padding: 10px 16px; border: 1px solid var(--line); border-left: 3px solid var(--warn); border-radius: 8px; background: var(--surface); }
+.note { padding: 10px 16px; border: 1px solid var(--line); border-left-width: 3px; border-radius: 8px; background: var(--surface); }
+.note.ok, .note.warn, .note.danger { border-color: var(--line); }
+.note.ok { border-left-color: var(--ok); } .note.warn { border-left-color: var(--warn); } .note.danger { border-left-color: var(--danger); }
+.group-row th { padding-top: 18px; color: var(--text); font-weight: 400; background: transparent; }
+tbody:first-of-type .group-row th { padding-top: 10px; }
+@media (max-width: 560px) { .hide-sm { display: none; } td.name { min-width: 0; } .schedule-table td.name { min-width: 14ch; overflow-wrap: break-word; } .schedule-table .badge { white-space: normal; } .schedule-table td:nth-child(2), .schedule-table td:nth-child(3) { white-space: normal; } }
+.range-controls { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+.dashboard-top .range-controls .segmented { margin-left: 0; }
+@media (max-width: 560px) { .range-controls { margin-left: 0; width: 100%; justify-content: space-between; } }
+/* Real buttons for actions. */
+.btn { min-height: 28px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 6px; background: transparent; color: var(--strong); font-size: 13px; }
+.btn:hover:not(:disabled) { background: var(--surface-hover); text-decoration: none; }
+.btn.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 50%, transparent); }
+td .btn + .btn { margin-left: 6px; }
+.panel-actions a.button { padding: 2px 10px; border-radius: 6px; } .panel-actions a.button:hover { background: var(--surface-hover); text-decoration: none; }
+thead th { font-size: 13px; }
+td .muted { font-size: 13px; }
+td .badge { font-size: 13px; }
+.dashboard-stats .stat { display: flex; flex-direction: column; }
+.dashboard-stats .stat > [data-spark] { margin-top: auto; padding-top: 8px; }
+.dashboard-stats .spark { display: block; width: 100%; height: 28px; }
 @media (max-width: 700px) { .dashboard-stats { grid-template-columns: repeat(2,minmax(0,1fr)); } .dashboard-nav { display: block; } .dashboard-nav .live { padding-block: 4px; } .dashboard-nav ul { flex-wrap: nowrap; overflow-x: auto; } }
 </style>
 </head>
@@ -1359,9 +1401,9 @@ function sorted(rows, [key, direction]) {
 }
 function head(table, columns) {
     const [key, direction] = ui.sort[table];
-    return '<tr>' + columns.map(([id, label, right]) => id
-        ? `<th${right ? ' class="num"' : ''} aria-sort="${key === id ? (direction < 0 ? 'descending' : 'ascending') : 'none'}"><button class="sort" data-sort="${table}:${id}">${label}</button></th>`
-        : `<th${right ? ' class="num"' : ''}>${label}</th>`).join('') + '</tr>';
+    return '<tr>' + columns.map(([id, label, right, extra = '']) => id
+        ? `<th class="${right ? 'num ' : ''}${extra}" aria-sort="${key === id ? (direction < 0 ? 'descending' : 'ascending') : 'none'}"><button class="sort" data-sort="${table}:${id}">${label}</button></th>`
+        : `<th class="${right ? 'num ' : ''}${extra}">${label}</th>`).join('') + '</tr>';
 }
 
 function measuredTable(table, data, nameCell, noun) {
@@ -1369,9 +1411,9 @@ function measuredTable(table, data, nameCell, noun) {
     if (data.rows.length === 0) { return ''; }
     const body = rows.map((row) => `<tr><td class="name">${nameCell(row.name)}</td>
         <td class="num">${int(row.runs)}<span class="bar" style="--v:${pct(row.runs, data.total)}%"></span></td>
-        <td class="num">${ms(row.avg_ms)}</td><td class="num">${ms(row.max_ms)}</td>
-        <td class="num">${errorCell(row.errors, row.runs)}</td><td class="muted num">${ago(row.last + 60, Math.max(ui.state.now, row.last + 60))}</td></tr>`).join('');
-    return `<div class="table-wrap"><table class="hover"><thead>${head(table, [['name', noun], ['runs', 'Count', 1], ['avg_ms', 'Average', 1], ['max_ms', 'Slowest', 1], ['errors', 'Failed', 1], ['last', 'Last seen', 1]])}</thead><tbody>${body || `<tr><td colspan="6" class="muted">Nothing matches “${esc(ui.filter)}”.</td></tr>`}</tbody></table></div>`;
+        <td class="num">${ms(row.avg_ms)}</td><td class="num hide-sm">${ms(row.max_ms)}</td>
+        <td class="num">${errorCell(row.errors, row.runs)}</td><td class="muted num hide-sm">${ago(row.last + 60, Math.max(ui.state.now, row.last + 60))}</td></tr>`).join('');
+    return `<div class="table-wrap"><table class="hover"><thead>${head(table, [['name', noun], ['runs', 'Count', 1], ['avg_ms', 'Average', 1], ['max_ms', 'Slowest', 1, 'hide-sm'], ['errors', 'Failed', 1], ['last', 'Last seen', 1, 'hide-sm']])}</thead><tbody>${body || `<tr><td colspan="6" class="muted">Nothing matches “${esc(ui.filter)}”.</td></tr>`}</tbody></table></div>`;
 }
 
 function overview(s) {
@@ -1490,11 +1532,11 @@ function queue(s) {
             const key = 'j' + job.id + ':' + job.attempts + ':' + job.at, open = ui.open.has(key);
             return `<tr class="expandable" data-open="${esc(key)}"><td class="name">${disclosure(key, open)}${jobName(job)}${job.error ? `<div class="muted">${esc(job.error.slice(0, 110))}</div>` : ''}</td>
                 <td><span class="chip">${esc(job.queue)}</span></td><td><span class="badge ${outcome[job.outcome]?.[0] || ''}">${outcome[job.outcome]?.[1] || esc(job.outcome)}</span></td>
-                <td class="num">${job.attempts}</td><td class="num">${ms(job.ms)}</td><td class="muted num">${ago(job.at, s.now)}</td></tr>`
+                <td class="num hide-sm">${job.attempts}</td><td class="num hide-sm">${ms(job.ms)}</td><td class="muted num">${ago(job.at, s.now)}</td></tr>`
                 + (open ? `<tr class="detail"><td colspan="6"><dl class="defs"><dt>Job</dt><dd>${esc(job.job)}</dd><dt>Id</dt><dd>${esc(job.id)}</dd>${job.error ? `<dt>Error</dt><dd>${esc(job.error)}</dd>` : ''}</dl></td></tr>` : '');
         }).join('');
         const filters = `<div class="segmented" role="group" aria-label="Job outcome">${[['all', 'All'], ['completed', 'Completed'], ['retrying', 'Will retry'], ['failed', 'Failed']].map(([id, label]) => `<button data-job-filter="${id}" aria-pressed="${ui.jobFilter === id}">${label}</button>`).join('')}</div>`;
-        return `${nav}${bare(rows ? table('<th>Job</th><th>Queue</th><th>Outcome</th><th class="num">Try</th><th class="num">Took</th><th class="num">Ended</th>', rows, 'recent', shown.length) : empty('Nothing yet', ''), filters)}`;
+        return `${nav}${bare(rows ? table('<th>Job</th><th>Queue</th><th>Outcome</th><th class="num hide-sm">Try</th><th class="num hide-sm">Took</th><th class="num">Ended</th>', rows, 'recent', shown.length) : empty('Nothing yet', ''), filters)}`;
     }
 
     // Given up on, kept until retried or forgotten.
@@ -1503,10 +1545,10 @@ function queue(s) {
             const key = 'f' + job.id, open = ui.open.has(key);
             return `<tr class="expandable" data-open="${esc(key)}"><td class="name">${disclosure(key, open)}${jobName(job)}<div class="muted">${esc((job.error || '').slice(0, 110))}</div></td>
                 <td><span class="chip">${esc(job.queue)}</span></td><td class="num">${job.attempts}</td><td class="muted num">${ago(job.failed_at, s.now)}</td>
-                <td class="num"><button data-job="retry:${esc(job.id)}">Retry</button> <button class="danger" data-job="forget:${esc(job.id)}">Forget</button></td></tr>`
+                <td class="num"><button class="btn" data-job="retry:${esc(job.id)}">Retry</button><button class="btn danger" data-job="forget:${esc(job.id)}">Forget</button></td></tr>`
                 + (open ? `<tr class="detail"><td colspan="5"><dl class="defs"><dt>Job</dt><dd>${esc(job.job)}</dd><dt>Id</dt><dd>${esc(job.id)}</dd><dt>Error</dt><dd>${esc(job.error)}</dd></dl><pre>${esc(JSON.stringify(job.data, null, 2))}</pre></td></tr>` : '');
         }).join('');
-        const actions = rows ? `<button data-job="retry:all">Retry all</button><button class="danger" data-job="forget:all">Forget all</button>` : '';
+        const actions = rows ? `<button class="btn" data-job="retry:all">Retry all</button><button class="btn danger" data-job="forget:all">Forget all</button>` : '';
         return `${nav}${bare(rows ? table('<th>Job</th><th>Queue</th><th class="num">Tries</th><th class="num">Failed</th><th></th>', rows, 'failed', s.jobs.failed.length) : empty('Nothing failed', ''), actions)}`;
     }
 
@@ -1518,8 +1560,8 @@ function queue(s) {
     };
     const wait = (q) => q.longest_wait === null ? '<span class="faint">–</span>' : `<span class="${q.longest_wait >= 300 ? 'error-count' : q.longest_wait >= 60 ? 'strong' : 'muted'}">${span(q.longest_wait)}</span>`;
     const queueRows = s.jobs.queues.map((q) => `<tr><td><span>${esc(q.name)}</span></td>
-        <td class="num">${quiet(q.pending, true)}</td><td class="num">${quiet(q.processing)}</td><td class="num">${quiet(q.delayed)}</td>
-        <td class="num">${quiet(q.completed)}</td><td class="num">${q.failed ? `<span class="error-count">${int(q.failed)}</span>` : quiet(0)}</td>
+        <td class="num">${quiet(q.pending, true)}</td><td class="num">${quiet(q.processing)}</td><td class="num hide-sm">${quiet(q.delayed)}</td>
+        <td class="num hide-sm">${quiet(q.completed)}</td><td class="num">${q.failed ? `<span class="error-count">${int(q.failed)}</span>` : quiet(0)}</td>
         <td class="num">${wait(q)}</td><td class="num">${serving(q.name)}</td></tr>`).join('');
     const supervisors = s.jobs.supervisors.map((sup) => {
         const running = alive['queue:' + sup.name] || 0;
@@ -1533,7 +1575,7 @@ function queue(s) {
         <a href="#queue/failed">${stat('Failed', `<span class="${counts.failed ? 'error-count' : ''}">${int(counts.failed)}${s.jobs.failed_more ? '+' : ''}</span>`, sum('retried') ? `${int(sum('retried'))} retried` : '')}</a>
     </div>
     <div class="cols dashboard-two section queue-capacity">
-        ${card('Queues', '', `<div class="table-wrap"><table class="hover"><thead><tr><th>Queue</th><th class="num">Pending</th><th class="num">Processing</th><th class="num">Delayed</th><th class="num">Completed</th><th class="num">Failed</th><th class="num" title="How long the oldest pending job has waited">Wait</th><th class="num">Workers</th></tr></thead><tbody>${queueRows}</tbody></table></div>`)}
+        ${card('Queues', '', `<div class="table-wrap"><table class="hover"><thead><tr><th>Queue</th><th class="num">Pending</th><th class="num">Processing</th><th class="num hide-sm">Delayed</th><th class="num hide-sm">Completed</th><th class="num">Failed</th><th class="num" title="How long the oldest pending job has waited">Wait</th><th class="num">Workers</th></tr></thead><tbody>${queueRows}</tbody></table></div>`)}
         ${supervisors ? card('Supervisors', '', `<ul class="dashboard-list">${supervisors}</ul>`) : ''}
     </div>
     <div class="section">${card('Throughput', '', `<div class="body">${chart(bins(s.jobs.series, s.since, s.minutes), 'tries')}</div>`)}</div>
@@ -1544,24 +1586,73 @@ function schedule(s) {
     if (!s.tasks.installed) { return `<section class="dashboard-panel">${empty('No schedule', 'Register <code>SchedulePlugin</code> before <code>ClockwerkPlugin</code> to see scheduled tasks here.')}</section>`; }
     if (!s.tasks.rows.length) { return `<section class="dashboard-panel">${empty('Nothing is scheduled', 'Declare tasks on <code>Schedule</code> in your setup’s <code>register()</code>.')}</section>`; }
     const running = s.workers.some((w) => w.group_name === 'schedule');
-    const rows = s.tasks.rows.map((task) => {
-        const state = task.runs === 0 ? ['', 'Not run yet'] : task.errors === 0 ? ['ok', 'Running well'] : task.errors === task.runs ? ['danger', 'Failing'] : ['warn', `${task.errors} failed`];
-        return `<tr><td class="name"><span>${esc(task.name)}</span>${task.one_server ? ' <span class="chip">one server</span>' : ''}${task.without_overlapping ? ' <span class="chip">without overlapping</span>' : ''}</td>
-            <td><span class="chip">${esc(task.when)}</span></td>
-            <td class="muted num">${task.next_error ? `<span class="error-count" title="${esc(task.next_error)}">No next run</span>` : task.next ? `${until(task.next, s.now)} <span class="faint">· ${stamp(task.next).replace(/:\d\d(?!.*:\d\d)/, '')}</span>` : 'while the scheduler runs'}</td>
-            <td class="num">${int(task.runs)}</td><td class="num">${task.runs ? ms(task.avg_ms) : '<span class="faint">–</span>'}</td>
-            <td class="muted num">${task.last ? ago(task.last + 60, Math.max(s.now, task.last + 60)) : '<span class="faint">–</span>'}</td>
-            <td class="num"><span class="badge ${state[0]}">${state[1]}</span></td></tr>`;
+    const stateOf = (task) => task.next_error ? ['danger', 'Never runs'] : task.runs === 0 ? ['', 'Not run yet'] : task.errors === 0 ? ['ok', 'Healthy'] : task.errors === task.runs ? ['danger', 'Failing'] : ['warn', `${int(task.errors)} of ${int(task.runs)} failed`];
+    // What needs a look comes first, then the rest in the order they will run.
+    const rank = (task) => task.next_error || (task.runs && task.errors === task.runs) ? 0 : task.errors ? 1 : 2;
+    const tasks = [...s.tasks.rows].sort((a, b) => rank(a) - rank(b) || (a.next ?? Infinity) - (b.next ?? Infinity));
+    const failing = s.tasks.rows.filter((task) => rank(task) < 2).length;
+    const upcoming = tasks.filter((task) => task.next).sort((a, b) => a.next - b.next)[0];
+    const ran = s.tasks.rows.reduce((sum, task) => sum + task.runs, 0);
+    const rows = tasks.map((task) => {
+        const state = stateOf(task);
+        const [kind, name] = task.name.startsWith('command ') ? ['command', task.name.slice(8)] : ['', task.name];
+        const flags = [task.one_server && 'One server', task.without_overlapping && 'No overlap'].filter(Boolean);
+        const human = cronText(task.when);
+        return `<tr><td class="name"><div class="task-name">${kind ? `<span class="faint hide-sm">${kind}</span> ` : ''}<code>${esc(name)}</code></div>${flags.length ? `<div class="tags">${flags.map((f) => `<span class="tag">${f}</span>`).join('')}</div>` : ''}</td>
+            <td>${human ? `<div>${esc(human)}</div>` : ''}<code class="${human ? 'faint hide-sm' : ''}">${esc(task.when)}</code></td>
+            <td>${task.next_error ? `<span class="error-count" title="${esc(task.next_error)}">No next run</span><div class="faint">${esc(task.next_error)}</div>` : task.next ? `<div>${until(task.next, s.now)}</div><div class="faint hide-sm">${stamp(task.next).replace(/:\d\d(?!.*:\d\d)/, '')}</div>` : '<span class="muted">While the scheduler runs</span>'}</td>
+            <td class="num hide-sm">${task.runs ? int(task.runs) : '<span class="faint">0</span>'}</td><td class="num hide-sm">${task.runs ? ms(task.avg_ms) : '<span class="faint">–</span>'}</td>
+            <td class="muted num hide-sm">${task.last ? ago(task.last + 60, Math.max(s.now, task.last + 60)) : '<span class="faint">–</span>'}</td>
+            <td><span class="badge ${state[0]}">${state[1]}</span></td></tr>`;
     }).join('');
     return `${running ? '' : '<div class="note warn">Warning. No scheduler is running, so nothing here will run. Start <code>php cua start</code>, or <code>schedule:work</code> on its own.</div>'}
-    ${card('Scheduled tasks', `${s.tasks.rows.length}`, `<div class="table-wrap"><table class="hover"><thead><tr><th>Task</th><th>When</th><th>Next run</th><th class="num">Runs</th><th class="num">Average</th><th class="num">Last run</th><th class="num">State</th></tr></thead><tbody>${rows}</tbody></table></div>`)}`;
+    <div class="stats dashboard-stats">
+        ${stat('Tasks', int(s.tasks.rows.length), running ? 'scheduler running' : '<span class="error-count">no scheduler running</span>')}
+        ${stat('Need a look', `<span class="${failing ? 'error-count' : ''}">${int(failing)}</span>`, failing ? 'failing or never runs' : 'all healthy')}
+        ${stat('Runs', int(ran), `in the last ${ranges.find(([m]) => m === s.minutes)?.[1] ?? s.minutes + 'm'}`)}
+        ${stat('Next up', upcoming ? (upcoming.next - s.now < 60 ? '< 1m' : span(upcoming.next - s.now)) : '–', upcoming ? esc(upcoming.name.replace(/^command /, '')) : '')}
+    </div>
+    <div class="section">${card('Scheduled tasks', `${s.tasks.rows.length}`, `<div class="table-wrap"><table class="hover schedule-table"><thead><tr><th>Task</th><th>Runs when</th><th>Next run</th><th class="num hide-sm">Runs</th><th class="num hide-sm">Average</th><th class="num hide-sm">Last run</th><th>State</th></tr></thead><tbody>${rows}</tbody></table></div>`)}</div>`;
+}
+
+// The common cron shapes in words; anything else is left to the expression itself.
+function cronText(when) {
+    if (/^every /.test(when)) { return 'Every ' + when.slice(6).replace(/ s$/, ' seconds'); }
+    const parts = String(when).trim().split(/\s+/);
+    if (parts.length !== 5) { return ''; }
+    const [m, h, dom, mon, dow] = parts;
+    const num = (v) => /^\d+$/.test(v);
+    const at = () => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    if (mon !== '*') { return ''; }
+    if (m === '*' && h === '*' && dom === '*' && dow === '*') { return 'Every minute'; }
+    if (/^\*\/\d+$/.test(m) && h === '*' && dom === '*' && dow === '*') { return `Every ${m.slice(2)} minutes`; }
+    if (num(m) && h === '*' && dom === '*' && dow === '*') { return `Hourly at :${m.padStart(2, '0')}`; }
+    if (num(m) && /^\*\/\d+$/.test(h) && dom === '*' && dow === '*') { return `Every ${h.slice(2)} hours at :${m.padStart(2, '0')}`; }
+    if (!num(m) || !num(h)) { return ''; }
+    if (dom === '*' && dow === '*') { return `Daily at ${at()}`; }
+    if (dom === '*' && dow === '1-5') { return `Weekdays at ${at()}`; }
+    if (dom === '*' && num(dow) && days[dow]) { return `${days[dow]}s at ${at()}`; }
+    if (num(dom) && dow === '*') { return `Monthly on day ${dom} at ${at()}`; }
+    return '';
 }
 
 function workers(s) {
     if (!s.workers.length) { return `<section class="dashboard-panel">${empty('No worker heard from', 'A worker reports every few seconds once <code>php cua start</code>, <code>queue:work</code> or <code>schedule:work</code> is running.')}</section>`; }
     const groups = Object.create(null);
     for (const worker of s.workers) { (groups[worker.group_name] ??= []).push(worker); }
-    return Object.entries(groups).map(([group, list], index) => `<div class="${index ? 'section' : ''}">${card(esc(group), `${list.length} ${list.length === 1 ? 'process' : 'processes'}`, `<div class="table-wrap"><table class="hover"><thead><tr><th>Process</th><th>Host</th><th class="num">Up for</th><th class="num">Memory</th><th class="num">Handled</th><th class="num">Heard from</th></tr></thead><tbody>${list.map((w) => `<tr><td><span class="badge ok">${w.pid}</span></td><td class="muted">${esc(w.host)}</td><td class="num">${span(s.now - w.started_at)}</td><td class="num">${bytes(w.memory)}</td><td class="num">${int(w.handled)}</td><td class="muted num">${ago(w.seen_at, s.now)}</td></tr>`).join('')}</tbody></table></div>`)}</div>`).join('');
+    const hosts = new Set(s.workers.map((w) => w.host)).size;
+    const memory = s.workers.reduce((sum, w) => sum + w.memory, 0);
+    const handled = s.workers.reduce((sum, w) => sum + w.handled, 0);
+    const quietest = Math.max(...s.workers.map((w) => s.now - w.seen_at));
+    const body = Object.entries(groups).map(([group, list]) => `<tbody><tr class="group-row"><th colspan="6"><span class="strong">${esc(group)}</span> <span class="faint">${list.length} ${list.length === 1 ? 'process' : 'processes'} · ${bytes(list.reduce((sum, w) => sum + w.memory, 0))}</span></th></tr>${list.map((w) => `<tr><td><span class="badge ok">${w.pid}</span></td><td class="muted">${esc(w.host)}</td><td class="num hide-sm">${span(s.now - w.started_at)}</td><td class="num">${bytes(w.memory)}</td><td class="num hide-sm">${int(w.handled)}</td><td class="muted num">${ago(w.seen_at, s.now)}</td></tr>`).join('')}</tbody>`).join('');
+    return `<div class="stats dashboard-stats">
+        ${stat('Processes', int(s.workers.length), `${Object.keys(groups).length} ${Object.keys(groups).length === 1 ? 'group' : 'groups'}`)}
+        ${stat('Hosts', int(hosts), '')}
+        ${stat('Memory', bytes(memory).replace(/ (\w+)$/, '<small>$1</small>'), `${bytes(memory / s.workers.length)} a process`)}
+        ${stat('Handled', int(handled), `last report ${quietest < 5 ? 'just now' : span(quietest) + ' ago at most'}`)}
+    </div>
+    <div class="section">${card('Processes', '', `<div class="table-wrap"><table class="hover workers-table"><thead><tr><th>Process</th><th>Host</th><th class="num hide-sm">Up for</th><th class="num">Memory</th><th class="num hide-sm">Handled</th><th class="num">Heard from</th></tr></thead>${body}</table></div>`)}</div>`;
 }
 
 function exceptionRows(s, list, prefix) {
@@ -1580,8 +1671,8 @@ function gate() {
     return `<a class="skip-link" href="#main">Skip to content</a><div class="page wide"><header class="site-header"><span class="wordmark">clockwerk<span>.</span></span>${themeControl()}</header><main id="main"><h1>Clockwerk</h1><section class="gate">${content}</section></main></div>`;
 }
 
-const more = (list, total) => total > ui.shown[list] ? `<div class="more"><button data-more="${list}">Show ${Math.min(25, total - ui.shown[list])} more</button> <span class="muted">${ui.shown[list]} of ${total} shown</span></div>` : '';
-const views = { overview, requests, queue, schedule, workers, exceptions: (s) => card('Exceptions', `${s.exceptions.length}${s.exceptions.length >= 200 ? ', the latest' : ''}`, exceptionRows(s, s.exceptions.slice(0, ui.shown.exceptions), 'e') + more('exceptions', s.exceptions.length)) };
+const more = (list, total) => total > ui.shown[list] ? `<div class="more"><button class="btn" data-more="${list}">Show ${Math.min(25, total - ui.shown[list])} more</button> <span class="muted">${ui.shown[list]} of ${total} shown</span></div>` : '';
+const views = { overview, requests, queue, schedule, workers, exceptions: (s) => bare(exceptionRows(s, s.exceptions.slice(0, ui.shown.exceptions), 'e') + more('exceptions', s.exceptions.length), s.exceptions.length ? `<span class="muted">${s.exceptions.length >= 200 ? 'The latest 200' : int(s.exceptions.length) + ' kept'}, newest first</span>` : '') };
 
 function render() {
     clearCharts();
@@ -1601,8 +1692,8 @@ function render() {
         </nav>
         <main id="main" class="shell-main">
             <div class="toolbar dashboard-top"><h1>${title}</h1><span class="muted">the last ${ranges.find(([m]) => m === s.minutes)?.[1] ?? s.minutes + 'm'}</span>
-                <div class="segmented" role="group" aria-label="Time range">${ranges.map(([m, label]) => `<button data-range="${m}" aria-pressed="${m === ui.minutes}">${label}</button>`).join('')}</div>
-                <button class="quiet" data-pause aria-pressed="${ui.paused}">${ui.paused ? 'Resume' : 'Pause'}</button>
+                <div class="range-controls"><div class="segmented" role="group" aria-label="Time range">${ranges.map(([m, label]) => `<button data-range="${m}" aria-pressed="${m === ui.minutes}">${label}</button>`).join('')}</div>
+                <button class="quiet" data-pause aria-pressed="${ui.paused}">${ui.paused ? 'Resume' : 'Pause'}</button></div>
             </div>
             ${ui.error ? `<div class="note danger" role="status">Error. ${esc(ui.error)} Showing what was last received.</div>` : ''}
             ${views[ui.page](s)}

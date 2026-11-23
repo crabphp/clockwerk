@@ -2,6 +2,13 @@
 
 Crab Clockwerk follows [semantic versioning](https://semver.org). Before 1.0, a minor version may break what an application writes; the entry says what to change.
 
+## 0.2.3 — 2026-11-23
+
+- Make scheduled tasks easy to scan: common cron expressions in words, the next run with its date, the tasks that need a look first, and summary cards for tasks, failures, runs and the next task due.
+- Show workers as one table grouped by process group, with summary cards for processes, hosts, memory and jobs handled.
+- Soften chips into pills, give tab counts and actions a clear shape, put headline numbers in cards, and drop the repeated heading on the exceptions page.
+- On phones, hide secondary table columns instead of scrolling sideways.
+
 ## 0.2.2 — 2026-11-23
 
 - Center the dashboard workspace with horizontal navigation, clearer metric and table typography, and links from overview warnings to the relevant detail pages.
