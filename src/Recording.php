@@ -92,7 +92,19 @@ final class Recording
             $this->timer = null;
         }
         try {
-            $container->get(Recorder::class)->flush($this->worker);
+            $recorder = $container->get(Recorder::class);
+            $stats = $worker->stats();
+            // Set by Crab 0.7.6 and later when the worker passed its limits and a fresh one takes its place.
+            $reason = $stats['recycling'] ?? null;
+            if (is_string($reason)) {
+                $recorder->replaced(
+                    (string) $stats['group'],
+                    (int) $stats['pid'],
+                    $reason,
+                    (int) $stats['memoryBytes'],
+                );
+            }
+            $recorder->flush($this->worker);
             $container->get(Store::class)->gone($this->worker);
         } catch (\Throwable) {
             // What could not be written in the worker's last moment is let go.

@@ -156,6 +156,26 @@ async function run() {
         assert.match(dashboard.workers(s), /&lt;host&gt;/);
         return;
     }
+    if (scenario === 'replaced workers') {
+        const s = state();
+        s.workers = [{ group_name: 'http', pid: 7, host: 'web-1', started_at: 900, seen_at: 999, memory: 1000, handled: 1 }];
+        assert.doesNotMatch(dashboard.workers(s), /<h2>Replaced<\/h2>/, 'No card until a worker was replaced.');
+        assert.match(dashboard.workers(s), /<dt>Replaced<\/dt><dd>0<\/dd><small>none in the last/);
+        s.replaced = [
+            { at: 990, title: '', detail: { group: 'http', pid: 5, host: '<web-1>', reason: 'memory', memory: 140 * 1048576, handled: 3210 } },
+            { at: 950, title: '', detail: { group: 'http', pid: 4, host: 'web-1', reason: 'requests', memory: 40 * 1048576, handled: 10012 } },
+            { at: 900, title: '', detail: { group: 'http', pid: 3, host: 'web-1', reason: 'memory', memory: 150 * 1048576, handled: 800 } },
+        ];
+        const markup = dashboard.workers(s);
+        assert.match(markup, /<dt>Replaced<\/dt><dd>3<\/dd><small>2 for memory · 1 for requests<\/small>/);
+        assert.match(markup, /<h2>Replaced<\/h2>/);
+        assert.match(markup, /badge warn">5</);
+        assert.match(markup, /badge ok">4</);
+        assert.match(markup, /140 MB/);
+        assert.match(markup, /10,012/);
+        assert.match(markup, /&lt;web-1&gt;/);
+        return;
+    }
     if (scenario === 'schedule') {
         const s = state();
         s.tasks = { installed: true, rows: [{ name: '<task>', when: '0 0 31 2 *', one_server: true, without_overlapping: true, next: null, next_error: '<impossible>', runs: 0, errors: 0 }] };

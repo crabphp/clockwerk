@@ -60,6 +60,7 @@ final readonly class Dashboard
             // A worker is alive while it was heard from within three of its writes.
             'workers' => $this->store->workers($now - (int) ceil($interval * 3) - 2),
             'exceptions' => $this->store->recent('exception', $since, 200),
+            'replaced' => $this->store->recent('replaced', $since, 200),
         ];
     }
 

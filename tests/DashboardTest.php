@@ -55,6 +55,11 @@ final class DashboardTest extends TestCase
         $this->scenario('actions');
     }
 
+    public function testTheWorkersPageCountsAndListsWorkersReplacedByFreshOnes(): void
+    {
+        $this->scenario('replaced workers');
+    }
+
     public function testWorkerNamesCannotCollideWithJavascriptObjectProperties(): void
     {
         $this->scenario('worker names');

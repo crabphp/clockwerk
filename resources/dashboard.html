@@ -1645,14 +1645,22 @@ function workers(s) {
     const memory = s.workers.reduce((sum, w) => sum + w.memory, 0);
     const handled = s.workers.reduce((sum, w) => sum + w.handled, 0);
     const quietest = Math.max(...s.workers.map((w) => s.now - w.seen_at));
+    const replaced = s.replaced || [];
+    const reasons = Object.create(null);
+    for (const r of replaced) { const reason = r.detail?.reason || 'limits'; reasons[reason] = (reasons[reason] || 0) + 1; }
+    const replacedRows = replaced.map((r) => {
+        const d = r.detail || {};
+        return `<tr><td><span class="badge ${d.reason === 'memory' ? 'warn' : 'ok'}">${esc(d.pid)}</span></td><td>${esc(d.group)}</td><td class="muted hide-sm">${esc(d.host)}</td><td>${esc(d.reason)}</td><td class="num">${bytes(d.memory || 0)}</td><td class="num hide-sm">${int(d.handled)}</td><td class="muted num">${ago(r.at, s.now)}</td></tr>`;
+    }).join('');
     const body = Object.entries(groups).map(([group, list]) => `<tbody><tr class="group-row"><th colspan="6"><span class="strong">${esc(group)}</span> <span class="faint">${list.length} ${list.length === 1 ? 'process' : 'processes'} · ${bytes(list.reduce((sum, w) => sum + w.memory, 0))}</span></th></tr>${list.map((w) => `<tr><td><span class="badge ok">${w.pid}</span></td><td class="muted">${esc(w.host)}</td><td class="num hide-sm">${span(s.now - w.started_at)}</td><td class="num">${bytes(w.memory)}</td><td class="num hide-sm">${int(w.handled)}</td><td class="muted num">${ago(w.seen_at, s.now)}</td></tr>`).join('')}</tbody>`).join('');
     return `<div class="stats dashboard-stats">
-        ${stat('Processes', int(s.workers.length), `${Object.keys(groups).length} ${Object.keys(groups).length === 1 ? 'group' : 'groups'}`)}
-        ${stat('Hosts', int(hosts), '')}
+        ${stat('Processes', int(s.workers.length), `${Object.keys(groups).length} ${Object.keys(groups).length === 1 ? 'group' : 'groups'} · ${int(hosts)} ${hosts === 1 ? 'host' : 'hosts'}`)}
+        ${stat('Replaced', int(replaced.length), replaced.length ? Object.entries(reasons).map(([reason, n]) => `${int(n)} for ${esc(reason)}`).join(' · ') : `none in the last ${ranges.find(([m]) => m === s.minutes)?.[1] ?? s.minutes + 'm'}`)}
         ${stat('Memory', bytes(memory).replace(/ (\w+)$/, '<small>$1</small>'), `${bytes(memory / s.workers.length)} a process`)}
         ${stat('Handled', int(handled), `last report ${quietest < 5 ? 'just now' : span(quietest) + ' ago at most'}`)}
     </div>
-    <div class="section">${card('Processes', '', `<div class="table-wrap"><table class="hover workers-table"><thead><tr><th>Process</th><th>Host</th><th class="num hide-sm">Up for</th><th class="num">Memory</th><th class="num hide-sm">Handled</th><th class="num">Heard from</th></tr></thead>${body}</table></div>`)}</div>`;
+    <div class="section">${card('Processes', '', `<div class="table-wrap"><table class="hover workers-table"><thead><tr><th>Process</th><th>Host</th><th class="num hide-sm">Up for</th><th class="num">Memory</th><th class="num hide-sm">Handled</th><th class="num">Heard from</th></tr></thead>${body}</table></div>`)}</div>
+    ${replaced.length ? `<div class="section">${card('Replaced', 'A fresh worker took each one\'s place. Replaced for memory every few minutes means something keeps growing.', `<div class="table-wrap"><table class="hover workers-table"><thead><tr><th>Process</th><th>Group</th><th class="hide-sm">Host</th><th>For its</th><th class="num">Memory</th><th class="num hide-sm">Handled</th><th class="num">When</th></tr></thead><tbody>${replacedRows}</tbody></table></div>`)}</div>` : ''}`;
 }
 
 function exceptionRows(s, list, prefix) {

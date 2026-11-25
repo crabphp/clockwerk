@@ -130,6 +130,29 @@ final class Recorder
         ];
     }
 
+    /**
+     * Keeps that a worker was replaced by a fresh one because it passed
+     * its limits (Worker::recycle()), with what it held and had handled.
+     *
+     * @param string $reason Why it asked: "requests", "memory" or what the application said.
+     */
+    public function replaced(string $group, int $pid, string $reason, int $memory): void
+    {
+        $this->events[] = [
+            'kind' => 'replaced',
+            'at' => $this->now(),
+            'title' => mb_strcut("{$group} worker {$pid} replaced for its {$reason}", 0, 200),
+            'detail' => [
+                'group' => mb_strcut($group, 0, 120),
+                'pid' => $pid,
+                'host' => mb_strcut((string) gethostname(), 0, 120),
+                'reason' => mb_strcut($reason, 0, 40),
+                'memory' => $memory,
+                'handled' => $this->handled,
+            ],
+        ];
+    }
+
     public function job(JobRan $event): void
     {
         $milliseconds = $event->seconds * 1000;

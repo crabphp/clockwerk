@@ -37,6 +37,7 @@ curl -H "Authorization: Bearer $CLOCKWERK_TOKEN" \
 | `tasks` | Whether a schedule is installed and its declared tasks with counts in the range |
 | `workers` | Workers whose heartbeat is no more than three write intervals plus up to three seconds old |
 | `exceptions` | Up to 200 recorded exceptions in the range, newest first |
+| `replaced` | Up to 200 workers replaced by a fresh one in the range, newest first: each one's `group`, `pid`, `host`, `reason` (`requests` or `memory`, from the framework's `server.max_requests` and `server.max_memory`), the `memory` it held and what it had `handled` |
 
 The range filters recorded counts and events. Live queue contents, failed jobs, worker heartbeats and declared schedules are independent of it. Reads are observations taken across several queries, not a transactional snapshot.
 

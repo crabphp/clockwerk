@@ -2,6 +2,11 @@
 
 Crab Clockwerk follows [semantic versioning](https://semver.org). Before 1.0, a minor version may break what an application writes; the entry says what to change.
 
+## 0.2.4 — 2026-11-25
+
+- Show workers replaced by fresh ones: a Replaced card on the workers page counts them in the range by reason, and a table lists each with its group, host, the memory it held and what it had handled. A worker records this as it stops after passing its limits, `server.max_requests` or `server.max_memory` in Crab 0.7.6 and later. With an older framework nothing is recorded. The API gains `replaced`.
+- The host count moves into the Processes card's footnote.
+
 ## 0.2.3 — 2026-11-23
 
 - Make scheduled tasks easy to scan: common cron expressions in words, the next run with its date, the tasks that need a look first, and summary cards for tasks, failures, runs and the next task due.
