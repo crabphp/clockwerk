@@ -34,6 +34,10 @@ final class WorkerRecordingTest extends TestCase
         $plugin->start($quiet, $app->container);
         $plugin->stop($quiet, $app->container);
         self::assertSame([], $events, 'A worker stopped for any other reason records nothing.');
+        if (!method_exists(Crab::class, 'maxMemory')) {
+            // Before Crab 0.7.6 a worker never says it is being replaced, so nothing more is recorded.
+            return;
+        }
 
         $worker = new Worker($loop, new Crab('http')->maxMemory(1), 0, ['tcp' => []], 1.0);
         $plugin->start($worker, $app->container);
